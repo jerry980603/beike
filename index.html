@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="背科">
+<meta name="theme-color" content="#f4f2ed">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>背科練習</title>
+<style>
+/* 配色沿用單字 App：紙色底、暖黑墨字、單一墨藍重點色、只用髮絲線 */
+:root{
+  --bg:#f4f2ed; --card:#fdfcfa; --text:#22201d; --sub:#726b62; --line:#e2ddd3;
+  --accent:#2b4c7e; --accent-soft:#e9ecf3; --on-accent:#fff;
+  --ok:#3f7d58; --ok-soft:#e9f0eb; --bad:#a8443a; --bad-soft:#f6ebe9;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#171614; --card:#201f1c; --text:#e6e2da; --sub:#9c958a; --line:#332f2a;
+    --accent:#8fb3d9; --accent-soft:#232c39; --on-accent:#171614;
+    --ok:#79b891; --ok-soft:#1b271f; --bad:#d18a80; --bad-soft:#2b1e1c;
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  font-size:16px;line-height:1.6;-webkit-text-size-adjust:100%;padding-bottom:env(safe-area-inset-bottom)}
+button{font-family:inherit;font-size:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,textarea,select{font-family:inherit;font-size:16px;color:var(--text);background:var(--card);
+  border:1px solid var(--line);border-radius:8px;padding:10px 12px;width:100%}
+header{position:sticky;top:0;z-index:20;background:var(--bg);
+  padding:calc(10px + env(safe-area-inset-top)) 16px 10px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;justify-content:space-between;gap:12px}
+header h1{margin:0;font-size:17px;font-weight:650;letter-spacing:.02em}
+header .daily{font-size:13px;color:var(--sub);font-variant-numeric:tabular-nums}
+header .end{font-size:13px;color:var(--sub);border:1px solid var(--line);border-radius:7px;padding:4px 10px}
+main{padding:16px;max-width:640px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:14px}
+.btn{display:block;width:100%;padding:14px;border-radius:8px;background:var(--accent);color:var(--on-accent);
+  font-weight:600;font-size:16px;text-align:center}
+.btn:active{opacity:.82}
+.btn:disabled{opacity:.4}
+.btn.ghost{background:transparent;color:var(--sub);border:1px solid var(--line);font-weight:500}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.sub{color:var(--sub);font-size:14px}.small{font-size:13px;color:var(--sub)}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;background:var(--accent-soft);color:var(--accent)}
+.tag.gray{background:var(--line);color:var(--sub)}
+.clock{font-size:15px;font-variant-numeric:tabular-nums}.clock b{font-size:28px;font-weight:700}
+.bar{display:flex;gap:3px;margin:10px 0 6px}.bar i{flex:1;height:8px;border-radius:2px;background:var(--line)}.bar i.on{background:var(--accent)}
+.plan{list-style:none;padding:0;margin:14px 0 16px}
+.plan li{display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line)}
+.plan li:first-child{border-top:none}.plan .n{font-variant-numeric:tabular-nums;color:var(--sub)}
+.note{font-size:14px;color:var(--sub);background:var(--accent-soft);border-radius:8px;padding:10px 12px;margin-top:12px}
+.done{color:var(--ok);font-weight:650}
+details{margin-top:8px}details summary{cursor:pointer;color:var(--sub);font-size:14px;padding:6px 0}
+.setrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.setrow select{width:auto}
+/* ---------- 練習 ---------- */
+.meta{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.q{font-size:20px;line-height:1.7;margin:4px 0 18px;word-break:break-word}
+.q .blank{display:inline-block;min-width:3em;border-bottom:2px solid var(--accent);color:var(--accent);text-align:center;font-weight:650;padding:0 4px}
+.opts{display:grid;gap:10px}
+.opt{display:block;width:100%;text-align:left;padding:13px 14px;border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:17px}
+.opt:active{background:var(--accent-soft)}
+.opt.right{border-color:var(--ok);background:var(--ok-soft);color:var(--ok);font-weight:650}
+.opt.wrong{border-color:var(--bad);background:var(--bad-soft);color:var(--bad)}
+.opt.idk{text-align:center;color:var(--sub);font-size:15px}
+.fb{border-radius:8px;padding:12px 14px;margin-top:14px}
+.fb.ok{background:var(--ok-soft);color:var(--ok)}
+.fb.bad{background:var(--bad-soft)}
+.fb .ans{font-size:19px;font-weight:700;color:var(--text)}
+.fb .ctx{font-size:14px;color:var(--sub);margin-top:6px;border-left:3px solid var(--line);padding-left:10px}
+.links{display:flex;gap:16px;justify-content:center;margin-top:12px}
+.links button{font-size:13px;color:var(--sub);text-decoration:underline}
+.mt{margin-top:12px}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);
+  background:var(--text);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:14px;z-index:50}
+</style>
+</head>
+<body>
+<header><h1>背科</h1><span class="daily" id="daily"></span></header>
+<main id="main"></main>
+<script src="cards.js"></script>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
