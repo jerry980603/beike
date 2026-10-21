@@ -44,10 +44,12 @@
   function dayStart(ms) { var d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); }
   function addDays(ms, n) { var d = new Date(dayStart(ms)); d.setDate(d.getDate() + n); return d.getTime(); }
   function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
-  /* 對答案前先統一：全形半形、大小寫、空白標點都不管（H₂O＝H2O） */
+  /* 對答案前先統一：全形半形、大小寫、空白標點都不管（H₂O＝H2O、Mn²⁺＝Mn2+）。
+     正負號要留著（a＝−5×1 跟 5×1 不一樣）：各種負號都當成 -，× 和 * 當成 x */
   function squash(s) {
     return String(s == null ? "" : s).normalize("NFKC").toLowerCase()
-      .replace(/[\s，。、；：！？「」『』（）()《》〈〉…—\-,.;:!?'"\/]/g, "");
+      .replace(/[−–]/g, "-").replace(/[×*]/g, "x")
+      .replace(/[\s，。、；：！？「」『』（）()《》〈〉…—,;:!?'"\/]/g, "");
   }
 
   /* ---------- 2. 卡片 ---------- */

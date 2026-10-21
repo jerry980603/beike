@@ -85,6 +85,9 @@ t("填空：長答案自己判、打字不管全形和標點、alt 也算對", f
            { id: "x#2", subj: "國文", q: "＿＿", a: "唐代古文運動的領袖人物", opts: ["a", "b", "c"] }]);
   var c = BK.card("x#1");
   ok(BK.checkFill(c, " h2o ")); ok(BK.checkFill(c, "水")); ok(!BK.checkFill(c, "")); ok(!BK.checkFill(c, "H2O2"));
+  var m = { id: "x#3", a: "−5×1" }, mn = { id: "x#4", a: "Mn²⁺" }, d = { id: "x#5", a: "+2.5" };
+  ok(BK.checkFill(m, "-5x1")); ok(BK.checkFill(m, "－5*1")); ok(!BK.checkFill(m, "5x1"), "負號不能省");
+  ok(BK.checkFill(mn, "Mn2+")); ok(!BK.checkFill(mn, "Mn2")); ok(BK.checkFill(d, "+2.5")); ok(!BK.checkFill(d, "+25"), "小數點不能省");
   var S = BK.blank(D0); item(S, "x#2", { pos: 2, due: D0 });
   eq(BK.makeQ(S, "x#2", "F").mode, "self");
 });
