@@ -65,7 +65,8 @@
       if (todo) html += '<button class="btn" id="go">開始</button>';
       else if (h.soon) html += '<div class="note">剛答錯的 ' + h.soon + " 張，隔 10 分鐘以上再考比較有效；晚一點再回來，或明天會排到。</div>";
       else html += '<div class="done">今天的都練完了 ✓</div>';
-      if (h.min >= h.budget && todo) html += '<div class="note">今天已經練滿 ' + h.budget + " 分鐘，可以繼續，但不用勉強。</div>";
+      if (h.newWaiting > h.newToday) html += '<button class="btn ghost mt" id="all">明天要考：今天 ' + h.newWaiting + " 張新卡全部上</button>";
+      if (h.min >= h.budget && todo) html +='<div class="note">今天已經練滿 ' + h.budget + " 分鐘，可以繼續，但不用勉強。</div>";
       html += "</div>";
     }
     html += '<details class="card"><summary>設定與紀錄</summary>' +
@@ -80,6 +81,11 @@
     $main.innerHTML = html;
     var go = document.getElementById("go");
     if (go) go.onclick = start;
+    var all = document.getElementById("all");
+    if (all) all.onclick = function () {
+      if (!confirm("今天把排隊的新卡全部上（明天恢復每天 " + S.set.newMax + " 張）？\n張數多會練比較久，記得留時間睡覺。")) return;
+      BK.allToday(S, Date.now()); save(); home();
+    };
     document.getElementById("budget").onchange = function () { S.set.budget = +this.value; save(); home(); };
     document.getElementById("copyBad").onclick = function () {
       copy("背科回報（" + S.bad.length + " 題）\n" + S.bad.map(function (b) {

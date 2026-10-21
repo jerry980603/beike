@@ -121,9 +121,13 @@
       });
   }
   function newQuota(S, now) {
+    var l = dayLog(S, dateStr(now));
+    if (l.all) return 100000;                        // 「今天全部上」（段考前一天用），只有今天
     if (dateStr(now) > S.set.learnEnd) return 0;    // 考前 10 天不學新東西
-    return Math.max(0, S.set.newMax - dayLog(S, dateStr(now)).n);
+    return Math.max(0, S.set.newMax - l.n);
   }
+  /* 段考前一天：今天不限新卡數，明天自動恢復 */
+  function allToday(S, now) { dayLog(S, dateStr(now)).all = 1; S.mtime = now; }
   /* 考前總複習：learnEnd 之後第一次練習，把考前不會再到期的卡平均排到 finalDay，
      階低、錯得多的先。只做一次（finalAt） */
   function finalReview(S, now) {
@@ -272,7 +276,7 @@
     init: init, card: card, normalize: normalize, blank: blank, addTime: addTime, dayLog: dayLog,
     home: home, newWaiting: newWaiting, reviewDue: reviewDue, hardDue: hardDue, finalReview: finalReview,
     startSession: startSession, next: next, left: left, makeQ: makeQ,
-    checkFill: checkFill, checkPick: checkPick, submit: submit, report: report, exclude: exclude
+    checkFill: checkFill, checkPick: checkPick, allToday: allToday, submit: submit, report: report, exclude: exclude
   };
   root.BK = BK;
   if (typeof module !== "undefined" && module.exports) module.exports = BK;

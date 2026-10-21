@@ -100,6 +100,14 @@ t("新卡每天最多 20 張，明天再上", function () {
   eq(BK.home(S, day(1)).newToday, 5);
 });
 
+t("今天全部上：只有今天不限新卡，明天恢復", function () {
+  BK.init(mk(58)); var S = BK.blank(D0);
+  BK.allToday(S, D0);
+  eq(BK.home(S, D0).newToday, 58);
+  var s = BK.startSession(S, D0); eq(s.queue.length, 58);
+  BK.init(mk(80)); eq(BK.home(S, day(1)).newToday, 20);
+});
+
 t("先複習、再上新卡；段考卡先上", function () {
   BK.init(mk(3, function (i) { return i === 3 ? { exam: "2026-11-05" } : {}; }));
   var S = BK.blank(D0); item(S, "d#2", { pos: 1, due: D0 });
