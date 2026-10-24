@@ -77,6 +77,16 @@ details{margin-top:8px}details summary{cursor:pointer;color:var(--sub);font-size
 .links{display:flex;gap:16px;justify-content:center;margin-top:12px}
 .links button{font-size:13px;color:var(--sub);text-decoration:underline}
 .mt{margin-top:12px}
+/* ---------- 學測／段考分頁、段考資料夾 ---------- */
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tabs button{flex:1;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--sub);font-weight:600}
+.tabs button.on{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.btn.sm{display:inline-block;width:auto;padding:8px 14px;font-size:14px;border-radius:7px;white-space:nowrap}
+.btn.soft{background:var(--accent-soft);color:var(--accent)}
+.fold{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;border-top:1px solid var(--line)}
+.fold:first-child{border-top:none;padding-top:0}
+.fold .btns{display:flex;gap:6px;flex-shrink:0}
+h2.sec{font-size:13px;font-weight:650;color:var(--sub);letter-spacing:.06em;margin:18px 0 8px}
 .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);
   background:var(--text);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:14px;z-index:50}
 </style>

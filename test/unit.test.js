@@ -157,6 +157,36 @@ t("答錯後按「不用背了」：不再考", function () {
   ok(ids.indexOf(q.id) < 0, "不再出現");
 });
 
+t("學測、段考分開：段考卡不進排程，只在資料夾", function () {
+  BK.init(mk(3).concat([
+    { id: "e#1", subj: "化學", side: "段考", folder: "化學｜氧化還原", q: "甲＿＿", a: "乙", opts: ["x", "y", "z"] },
+    { id: "e#2", subj: "化學", side: "段考", folder: "化學｜氧化還原", q: "丙＿＿", a: "丁", opts: ["x", "y", "z"] },
+    { id: "e#3", subj: "國文", side: "段考", folder: "國文｜師說", q: "戊＿＿", a: "己", opts: ["x", "y", "z"] }]));
+  var S = BK.blank(D0);
+  eq(BK.home(S, D0).total, 3); eq(BK.newWaiting(S).length, 3);
+  eq(BK.folders(S).map(function (f) { return f.name + f.n; }), ["化學｜氧化還原2", "國文｜師說1"]);
+  item(S, "e#1", { pos: 2, due: D0 });   // 以前在學測練過、後來改成段考：不再排程
+  eq(BK.reviewDue(S, D0).length, 0);
+});
+
+t("段考資料夾：練到每張都答對一次；不影響學測排程", function () {
+  var list = [];
+  for (var i = 1; i <= 6; i++) list.push({ id: "e#" + i, subj: "化學", side: "段考", folder: "化", q: "第" + i + "＿＿", a: "答" + i, opts: ["x", "y", "z"] });
+  BK.init(list); var S = BK.blank(D0), s = BK.startFolder(S, "化", "F", D0);
+  eq(s.lag, 3); var q, order = [], wrongOnce = { "e#2": 1, "e#6": 1 };
+  while ((q = BK.next(S, s, D0))) {
+    eq(q.fmt, "F"); order.push(q.id);
+    var good = !wrongOnce[q.id]; delete wrongOnce[q.id];
+    BK.submit(S, s, q, { ok: good, rt: 2000 }, D0);
+    ok(order.length < 20, "不會無限迴圈");
+  }
+  eq(order.length, 8, "6 張＋2 張再考");
+  eq(Object.keys(S.items).length, 0, "沒有建立學測進度");
+  var r = BK.endFolder(S, s, D0);
+  eq([r.ok, r.n, r.done], [4, 6, true]); eq(S.fd["化"].t, "2026-10-20");
+  var s2 = BK.startFolder(S, "化", "M", D0); eq(BK.next(S, s2, D0).opts.length, 4);
+});
+
 t("事件紀錄與每日紀錄", function () {
   BK.init(mk(1)); var S = BK.blank(D0), s = BK.startSession(S, D0);
   ans(S, s, BK.next(S, s, D0), true, D0); BK.addTime(S, 200000, D0);

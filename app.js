@@ -4,7 +4,7 @@
   var KEY = "beike_state";
   var $main = document.getElementById("main"), $daily = document.getElementById("daily");
   var S, sess = null, cur = null, shownAt = 0, firstKey = 0, lastTick = Date.now(), stats = null;
-  var KIND = { P: "新卡", L: "新卡", M: "複習", F: "複習", H: "頑固", R: "再考", V: "複習" };
+  var KIND = { P: "新卡", L: "新卡", M: "複習", F: "複習", H: "頑固", R: "再考", V: "複習", D: "段考" };
 
   /* ---------- 存檔 ---------- */
   function load() {
@@ -44,11 +44,26 @@
     $daily.textContent = "今天 " + h.min + " / " + h.budget + " 分";
   }
 
-  /* ---------- 首頁 ---------- */
+  /* ---------- 首頁：學測（照排程）／段考（資料夾，要背時進去練） ---------- */
+  var TAB_KEY = "beike_tab", tab = "學測";
+  try { tab = localStorage.getItem(TAB_KEY) === "段考" ? "段考" : "學測"; } catch (e) { }
   function home() {
     sess = null; cur = null;
-    var now = Date.now(), h = BK.home(S, now);
     daily();
+    var html = '<div class="tabs"><button data-t="學測" class="' + (tab === "學測" ? "on" : "") + '">學測</button>' +
+      '<button data-t="段考" class="' + (tab === "段考" ? "on" : "") + '">段考</button></div>';
+    html += tab === "段考" ? examHtml() : xueceHtml();
+    html += settingsHtml();
+    $main.innerHTML = html;
+    [].forEach.call($main.querySelectorAll(".tabs button"), function (b) {
+      b.onclick = function () { tab = b.dataset.t; try { localStorage.setItem(TAB_KEY, tab); } catch (e) { } home(); };
+    });
+    if (tab === "段考") bindExam(); else bindXuece();
+    bindSettings();
+  }
+
+  function xueceHtml() {
+    var h = BK.home(S, Date.now());
     var bars = "", on = Math.min(10, Math.round(h.min / h.budget * 10));
     for (var i = 0; i < 10; i++) bars += '<i class="' + (i < on ? "on" : "") + '"></i>';
     var todo = h.hard + h.due + h.newToday;
@@ -56,34 +71,67 @@
       '<div class="bar">' + bars + "</div>" +
       '<div class="small">保底 ' + h.floor + " 分鐘；做到就算有守住</div>";
     if (!h.total) {
-      html += '<div class="note">還沒有卡片。把要背的筆記拍照，放進電腦的 <b>data/背科/待匯入/</b>，跟 Claude 說「匯入背科」。</div></div>';
-    } else {
-      html += '<ul class="plan">' +
-        (h.hard ? "<li><span>頑固卡</span><span class='n'>" + h.hard + "</span></li>" : "") +
-        "<li><span>到期複習</span><span class='n'>" + h.due + "</span></li>" +
-        "<li><span>新卡</span><span class='n'>" + h.newToday + (h.newWaiting > h.newToday ? "（另外 " + (h.newWaiting - h.newToday) + " 張排隊）" : "") + "</span></li></ul>";
-      if (todo) html += '<button class="btn" id="go">開始</button>';
-      else if (h.soon) html += '<div class="note">剛答錯的 ' + h.soon + " 張，隔 10 分鐘以上再考比較有效；晚一點再回來，或明天會排到。</div>";
-      else html += '<div class="done">今天的都練完了 ✓</div>';
-      if (h.newWaiting > h.newToday) html += '<button class="btn ghost mt" id="all">明天要考：今天 ' + h.newWaiting + " 張新卡全部上</button>";
-      if (h.min >= h.budget && todo) html +='<div class="note">今天已經練滿 ' + h.budget + " 分鐘，可以繼續，但不用勉強。</div>";
-      html += "</div>";
+      return html + '<div class="note">還沒有學測卡片。把要背的筆記拍照，放進電腦的 <b>data/背科/待匯入/</b>，跟 Claude 說「匯入背科」。</div></div>';
     }
-    html += '<details class="card"><summary>設定與紀錄</summary>' +
-      '<div class="setrow"><span>每天目標</span><select id="budget">' +
+    html += '<ul class="plan">' +
+      (h.hard ? "<li><span>頑固卡</span><span class='n'>" + h.hard + "</span></li>" : "") +
+      "<li><span>到期複習</span><span class='n'>" + h.due + "</span></li>" +
+      "<li><span>新卡</span><span class='n'>" + h.newToday + (h.newWaiting > h.newToday ? "（另外 " + (h.newWaiting - h.newToday) + " 張排隊）" : "") + "</span></li></ul>";
+    if (todo) html += '<button class="btn" id="go">開始</button>';
+    else if (h.soon) html += '<div class="note">剛答錯的 ' + h.soon + " 張，隔 10 分鐘以上再考比較有效；晚一點再回來，或明天會排到。</div>";
+    else html += '<div class="done">今天的都練完了 ✓</div>';
+    if (h.min >= h.budget && todo) html += '<div class="note">今天已經練滿 ' + h.budget + " 分鐘，可以繼續，但不用勉強。</div>";
+    return html + "</div>";
+  }
+  function bindXuece() {
+    var go = document.getElementById("go");
+    if (go) go.onclick = start;
+  }
+
+  function examHtml() {
+    var fs = BK.folders(S);
+    if (!fs.length) {
+      return '<div class="card"><div class="note">還沒有段考資料夾。匯入筆記時跟 Claude 說「放段考」，並說是哪一科、哪個主題。</div></div>';
+    }
+    var html = "", subj = null;
+    fs.forEach(function (f) {
+      if (f.subj !== subj) {
+        if (subj !== null) html += "</div>";
+        subj = f.subj;
+        html += '<h2 class="sec">' + esc(subj) + '</h2><div class="card">';
+      }
+      var L = f.last, info = "還沒練過";
+      if (L) info = "上次 " + L.t.slice(5).replace("-", "/") + "：第一次就答對 " + L.ok + " / " + L.seen + (L.done ? "" : "（沒練完）");
+      var name = f.name.indexOf("｜") >= 0 ? f.name.slice(f.name.indexOf("｜") + 1) : f.name;
+      html += '<div class="fold"><div><div>' + esc(name) + ' <span class="small">' + f.n + ' 張</span></div><div class="small">' + info + "</div></div>" +
+        '<div class="btns"><button class="btn sm soft" data-f="' + esc(f.name) + '" data-m="M">選擇</button>' +
+        '<button class="btn sm" data-f="' + esc(f.name) + '" data-m="F">填空</button></div></div>';
+    });
+    return html + '</div><p class="small">資料夾裡會練到每張都答對一次；答錯的隔幾題再考。這裡練的不影響學測的排程。</p>';
+  }
+  function bindExam() {
+    [].forEach.call($main.querySelectorAll(".fold button"), function (b) {
+      b.onclick = function () { startDrill(b.dataset.f, b.dataset.m); };
+    });
+  }
+
+  function settingsHtml() {
+    var h = BK.home(S, Date.now()), nExam = BK.folders(S).reduce(function (a, f) { return a + f.n; }, 0);
+    return '<details class="card"><summary>設定與紀錄</summary>' +
+      '<div class="setrow"><span>學測每天目標（分鐘）</span><select id="budget">' +
       [10, 15, 20, 30].map(function (m) { return "<option" + (m === S.set.budget ? " selected" : "") + ">" + m + "</option>"; }).join("") +
       "</select></div>" +
-      '<div class="setrow"><span>卡片 ' + h.total + " 張；回報 " + S.bad.length + " 題</span></div>" +
+      '<div class="setrow"><span>學測 ' + h.total + " 張、段考 " + nExam + " 張；回報 " + S.bad.length + " 題</span></div>" +
+      (h.newWaiting > h.newToday ? '<button class="btn ghost mt" id="all">學測：今天 ' + h.newWaiting + " 張新卡全部上</button>" : "") +
       '<button class="btn ghost mt" id="copyBad"' + (S.bad.length ? "" : " disabled") + ">複製回報給 Claude</button>" +
       '<button class="btn ghost mt" id="backup">複製備份</button>' +
       '<button class="btn ghost mt" id="restore">貼上備份還原</button>' +
       '<p class="small">題目由 Claude 依你的筆記產生，不是大考中心的題目；有問題請按「回報」。</p></details>';
-    $main.innerHTML = html;
-    var go = document.getElementById("go");
-    if (go) go.onclick = start;
+  }
+  function bindSettings() {
     var all = document.getElementById("all");
     if (all) all.onclick = function () {
-      if (!confirm("今天把排隊的新卡全部上（明天恢復每天 " + S.set.newMax + " 張）？\n張數多會練比較久，記得留時間睡覺。")) return;
+      if (!confirm("今天把學測排隊的新卡全部上（明天恢復每天 " + S.set.newMax + " 張）？\n張數多會練比較久，記得留時間睡覺。")) return;
       BK.allToday(S, Date.now()); save(); home();
     };
     document.getElementById("budget").onchange = function () { S.set.budget = +this.value; save(); home(); };
@@ -112,8 +160,10 @@
   }
 
   /* ---------- 練習 ---------- */
-  function start() {
-    sess = BK.startSession(S, Date.now());
+  function start() { begin(BK.startSession(S, Date.now())); }
+  function startDrill(name, f) { begin(BK.startFolder(S, name, f, Date.now())); }
+  function begin(x) {
+    sess = x;
     stats = { n: 0, ok: 0 };
     lastTick = Date.now();
     var hd = document.querySelector("header");
@@ -129,7 +179,7 @@
     cur = BK.next(S, sess, Date.now());
     if (!cur) return finish();
     shownAt = Date.now(); firstKey = 0;
-    var c = cur.card, html = '<div class="card"><div class="meta"><span class="tag">' + esc(c.subj) + '</span><span class="tag gray">' + KIND[cur.kind] + "</span></div>" +
+    var c = cur.card, html = '<div class="card"><div class="meta"><span class="tag">' + esc(c.subj) + '</span><span class="tag gray">' + (sess.folder ? esc(sess.folder) : KIND[cur.kind]) + "</span></div>" +
       '<div class="q">' + qHtml(c.q) + "</div><div id='ans'>";
     if (cur.fmt === "M") {
       html += '<div class="opts">' + cur.opts.map(function (o, i) { return '<button class="opt" data-i="' + i + '">' + esc(o) + "</button>"; }).join("") +
@@ -200,7 +250,7 @@
     } else {
       html = '<div class="fb bad">' + (pick && pick !== "?" && pick !== "自評" ? "你答：" + esc(pick) + "<br>" : "") +
         '答案：<span class="ans">' + esc(q.card.a) + "</span>" + ctxHtml() + "</div>" +
-        (res.again ? '<p class="small">隔 ' + BK.LAG + " 題再考一次。</p>" : "");
+        (res.again ? '<p class="small">隔 ' + (sess.folder ? sess.lag : BK.LAG) + " 題再考一次。</p>" : "");
     }
     html += '<button class="btn mt" id="nx">下一題</button><div class="links"><button id="rep">回報這題有問題</button><button id="skip">這張不用背了</button></div>';
     box.insertAdjacentHTML("beforeend", html);
@@ -219,13 +269,20 @@
   function finish() {
     if (!sess) return home();
     tick();
-    var left = BK.left(sess);
+    var left = BK.left(sess), x = sess, msg = "";
+    var n = stats ? stats.n : 0, ok = stats ? stats.ok : 0;
+    if (x.folder) {
+      var r = BK.endFolder(S, x, Date.now());
+      if (r) msg = '<div class="card"><b>' + esc(x.folder) + (r.done ? "：練完了 ✓" : "：中途結束") + "</b>" +
+        '<div class="small">第一次就答對 ' + r.ok + " / " + r.seen + " 張" + (r.done ? "；答錯的都再考到答對了" : "；還有 " + left + " 張沒答對") + "</div></div>";
+    } else if (n) {
+      msg = '<div class="card"><b>這次 ' + n + " 題，答對 " + ok + "</b>" +
+        (left ? '<div class="small">還有 ' + left + " 張沒考到或要隔開再考，明天會排到。</div>" : "") + "</div>";
+    }
     sess = null; save();
     var e = document.querySelector("header .end"); if (e) e.remove();
-    var n = stats ? stats.n : 0, ok = stats ? stats.ok : 0;
     home();
-    if (n) $main.insertAdjacentHTML("afterbegin", '<div class="card"><b>這次 ' + n + " 題，答對 " + ok + "</b>" +
-      (left ? '<div class="small">還有 ' + left + " 張沒考到或要隔開再考，明天會排到。</div>" : "") + "</div>");
+    if (msg) $main.insertAdjacentHTML("afterbegin", msg);
   }
 
   /* ---------- 開始 ---------- */

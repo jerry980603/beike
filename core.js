@@ -55,11 +55,18 @@
   /* ---------- 2. 卡片 ---------- */
   var CARDS = {}, ORDER = [];
   /* 卡片由 beike.py build 產生：{id, subj, q, a, alt, opts, exam, ctx}；id ＝ "抄本檔名#n" */
+  /* 學測卡（side 沒寫或「學測」）進排程；段考卡（side「段考」）只放在資料夾 folder，要背時自己進去練 */
+  var FOLD = {}, FOLD_ORDER = [];
+  function isExam(c) { return c && c.side === "段考"; }
   function init(list) {
-    CARDS = {}; ORDER = [];
+    CARDS = {}; ORDER = []; FOLD = {}; FOLD_ORDER = [];
     (list || []).forEach(function (c) {
       if (!c || !c.id || CARDS[c.id]) return;
-      CARDS[c.id] = c; ORDER.push(c.id);
+      CARDS[c.id] = c;
+      if (!isExam(c)) { ORDER.push(c.id); return; }
+      var f = c.folder || c.subj || "未分類";
+      if (!FOLD[f]) { FOLD[f] = []; FOLD_ORDER.push(f); }
+      FOLD[f].push(c.id);
     });
   }
   function card(id) { return CARDS[id] || null; }
@@ -74,6 +81,7 @@
     S.excl = S.excl || {};
     S.bad = S.bad || [];
     S.ev = S.ev || [];
+    S.fd = S.fd || {};          // 段考資料夾最近一次練習：{ 資料夾: { t, ok, seen, n, fmt, done } }
     Object.keys(S.items).forEach(function (id) {
       var it = S.items[id];
       ["pos", "due", "seen", "right", "wrong", "lapses", "lastAt"].forEach(function (k) { if (typeof it[k] !== "number") it[k] = 0; });
@@ -108,7 +116,7 @@
       .sort(function (x, y) { return CARDS[x].exam < CARDS[y].exam ? -1 : CARDS[x].exam > CARDS[y].exam ? 1 : 0; });
     return ex.concat(a.filter(function (id) { return !CARDS[id].exam; }));
   }
-  function live(S) { return Object.keys(S.items).filter(function (id) { return CARDS[id] && !S.excl[id]; }); }
+  function live(S) { return Object.keys(S.items).filter(function (id) { return CARDS[id] && !isExam(CARDS[id]) && !S.excl[id]; }); }
   function hardDue(S, now) {
     return live(S).filter(function (id) { var it = S.items[id]; return it.hard && isDue(it, now); })
       .sort(function (a, b) { return S.items[a].due - S.items[b].due; });
@@ -177,9 +185,9 @@
     newWaiting(S).slice(0, newQuota(S, now)).forEach(function (id) { sess.queue.push({ id: id, kind: "P" }); });
     return sess;
   }
-  function makeQ(S, id, kind) {
+  function makeQ(S, id, kind, force) {
     var c = CARDS[id], it = S.items[id];
-    var f = kind === "P" || kind === "L" ? "M" : fmt(it);
+    var f = force || (kind === "P" || kind === "L" ? "M" : fmt(it));
     if (f === "M" && !(c.opts && c.opts.length)) f = "F";
     var q = { id: id, kind: kind, fmt: f, subj: c.subj, q: c.q, card: c };
     if (f === "M") q.opts = shuffle([c.a].concat(c.opts));
@@ -187,19 +195,64 @@
     return q;
   }
   function next(S, sess, now) {
+    sess.later = sess.later.filter(function (r) { return CARDS[r.id] && !S.excl[r.id]; });
     for (var i = 0; i < sess.later.length; i++) {
       if (sess.later[i].after <= sess.n) {
         var r = sess.later.splice(i, 1)[0];
-        if (!CARDS[r.id] || S.excl[r.id]) { i--; continue; }
-        return makeQ(S, r.id, r.kind === "V" ? fmt(S.items[r.id]) : r.kind);
+        return makeQ(S, r.id, r.kind === "V" ? fmt(S.items[r.id]) : r.kind, sess.fmt);
       }
     }
     while (sess.queue.length) {
       var s = sess.queue.shift();
       if (!CARDS[s.id] || sess.done[s.id] || S.excl[s.id]) continue;
-      return makeQ(S, s.id, s.kind === "V" ? fmt(S.items[s.id]) : s.kind);
+      return makeQ(S, s.id, s.kind === "V" ? fmt(S.items[s.id]) : s.kind, sess.fmt);
+    }
+    /* 段考資料夾要練到全對：剩下答錯的就算還沒隔夠也拿出來（等最久的先） */
+    if (sess.folder && sess.later.length) {
+      sess.later.sort(function (a, b) { return a.after - b.after; });
+      var x = sess.later.shift();
+      return makeQ(S, x.id, x.kind, sess.fmt);
     }
     return null;   // 隔不開的再考留到明天（卡片今天還是到期，明天會排到）
+  }
+
+  /* ---------- 6b. 段考資料夾：進去練到全對，不影響學測排程 ---------- */
+  function folders(S) {
+    return FOLD_ORDER.map(function (f) {
+      var ids = FOLD[f].filter(function (id) { return !S.excl[id]; });
+      return { name: f, subj: CARDS[FOLD[f][0]].subj, n: ids.length, last: (S.fd || {})[f] || null };
+    }).filter(function (x) { return x.n; });
+  }
+  /* fmt：「M」選擇題、「F」填空。再考的間隔：資料夾小的時候縮短，不然永遠隔不夠 */
+  function startFolder(S, name, f, now) {
+    var ids = (FOLD[name] || []).filter(function (id) { return !S.excl[id]; });
+    return {
+      folder: name, fmt: f === "F" ? "F" : "M", n: 0, done: {}, first: {}, total: ids.length,
+      lag: Math.min(LAG, Math.max(2, Math.floor(ids.length / 2))),
+      queue: shuffle(ids.slice()).map(function (id) { return { id: id, kind: "D" }; }), later: []
+    };
+  }
+  function drillSubmit(S, sess, q, res, now) {
+    var ok = !!res.ok, l = dayLog(S, dateStr(now));
+    sess.n++; l.a++; if (ok) l.c++;
+    if (!(q.id in sess.first)) sess.first[q.id] = ok;
+    if (!ok) sess.later.push({ id: q.id, kind: "D", after: sess.n + sess.lag });
+    sess.done[q.id] = true;
+    S.ev.push([Math.round(now / 1000), q.id, "D" + q.fmt, ok ? 1 : 0, Math.round(res.rt || 0), res.pick == null ? "" : String(res.pick), -1, -1]);
+    if (S.ev.length > EV_KEEP) S.ev.splice(0, S.ev.length - EV_KEEP);
+    S.mtime = now;
+    return { ok: ok, again: !ok };
+  }
+  /* 練完（或中途結束）記一筆：第一次就答對幾張、總共幾張、有沒有練完 */
+  function endFolder(S, sess, now) {
+    var ids = Object.keys(sess.first);
+    if (!ids.length) return null;
+    var r = { t: dateStr(now), ok: ids.filter(function (id) { return sess.first[id]; }).length,
+              seen: ids.length, n: sess.total, fmt: sess.fmt, done: !left(sess) };
+    S.fd = S.fd || {};
+    S.fd[sess.folder] = r;
+    S.mtime = now;
+    return r;
   }
   function left(sess) { return sess.queue.length + sess.later.length; }
 
@@ -217,6 +270,7 @@
   }
   /* res ＝ { ok, rt, pick }；回傳 { ok, again }，again ＝ 要不要排再考 */
   function submit(S, sess, q, res, now) {
+    if (sess.folder) return drillSubmit(S, sess, q, res, now);
     var td = dateStr(now), c = CARDS[q.id], l = dayLog(S, td);
     var it = S.items[q.id], ok = !!res.ok, again = false;
     if (q.kind === "P") { it = S.items[q.id] = newItem(now); l.n++; }
@@ -276,6 +330,7 @@
     init: init, card: card, normalize: normalize, blank: blank, addTime: addTime, dayLog: dayLog,
     home: home, newWaiting: newWaiting, reviewDue: reviewDue, hardDue: hardDue, finalReview: finalReview,
     startSession: startSession, next: next, left: left, makeQ: makeQ,
+    folders: folders, startFolder: startFolder, endFolder: endFolder,
     checkFill: checkFill, checkPick: checkPick, allToday: allToday, submit: submit, report: report, exclude: exclude
   };
   root.BK = BK;
