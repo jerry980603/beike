@@ -81,7 +81,26 @@
     else if (h.soon) html += '<div class="note">剛答錯的 ' + h.soon + " 張，隔 10 分鐘以上再考比較有效；晚一點再回來，或明天會排到。</div>";
     else html += '<div class="done">今天的都練完了 ✓</div>';
     if (h.min >= h.budget && todo) html += '<div class="note">今天已經練滿 ' + h.budget + " 分鐘，可以繼續，但不用勉強。</div>";
-    return html + "</div>";
+    return html + "</div>" + progressHtml();
+  }
+  /* 進度與熟度：每科一條長條（熟／記得／剛學／頑固／還沒開始） */
+  function progressHtml() {
+    var p = BK.progress(S, Date.now());
+    if (!p.subs.length) return "";
+    var pct = function (n, t) { return (n / t * 100).toFixed(1) + "%"; };
+    var html = '<div class="card"><div class="ptitle"><b>進度</b><span class="small">' +
+      (p.left ? (p.done ? "新卡預計 " + p.done.slice(5).replace("-", "/") + " 全部上完" : "新卡在 1/10 前上不完") : "新卡都上完了 ✓") + "</span></div>";
+    p.subs.forEach(function (r) {
+      html += '<div class="prow"><div class="phead"><span>' + esc(r.subj) + '</span><span class="small">' + r.started + " / " + r.total +
+        (r.hard ? "　頑固 " + r.hard : "") + "</span></div>" +
+        '<div class="pbar">' +
+        '<i class="k" style="width:' + pct(r.know, r.total) + '"></i>' +
+        '<i class="r" style="width:' + pct(r.recall, r.total) + '"></i>' +
+        '<i class="l" style="width:' + pct(r.learn, r.total) + '"></i>' +
+        '<i class="h" style="width:' + pct(r.hard, r.total) + '"></i></div>' +
+        '<div class="small">熟 ' + r.know + "・記得 " + r.recall + "・剛學 " + r.learn + "</div></div>";
+    });
+    return html + '<p class="small mt">熟＝隔 14 天以上還答對；記得＝填空答對過；剛學＝還在考選擇題。</p></div>';
   }
   function bindXuece() {
     var go = document.getElementById("go");

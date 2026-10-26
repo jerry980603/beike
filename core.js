@@ -165,6 +165,34 @@
     return ids.length;
   }
 
+  /* ---------- 4b. 進度與熟度（學測卡） ----------
+     剛學＝第 0～1 階（還在考選擇題）；記得＝第 2～3 階（填空答對過）；熟＝第 4 階以上（隔 14 天以上還答對）。
+     頑固卡另外算，不放進三段裡。不算「欠幾張」（設計：不顯示積欠） */
+  var KNOW = 4, RECALL = FILL_FROM;
+  function progress(S, now) {
+    var subs = {}, list = [];
+    ORDER.forEach(function (id) {
+      if (S.excl[id]) return;
+      var s = CARDS[id].subj || "其他";
+      var r = subs[s] || (subs[s] = { subj: s, total: 0, started: 0, learn: 0, recall: 0, know: 0, hard: 0 });
+      if (!r.total) list.push(r);
+      r.total++;
+      var it = S.items[id];
+      if (!it) return;
+      r.started++;
+      if (it.hard) r.hard++;
+      else if (it.pos >= KNOW) r.know++;
+      else if (it.pos >= RECALL) r.recall++;
+      else r.learn++;
+    });
+    /* 照目前每天的新卡數，估全部上完的日期（learnEnd 之後不上新卡就不估） */
+    var left = newWaiting(S).length, per = S.set.newMax, td = dateStr(now);
+    var today = Math.max(0, per - dayLog(S, td).n);
+    var days = left <= today ? 0 : Math.ceil((left - today) / per);
+    var end = dateStr(addDays(now, days));
+    return { subs: list, left: left, done: left ? (end <= S.set.learnEnd ? end : null) : td };
+  }
+
   /* ---------- 5. 首頁 ---------- */
   function home(S, now) {
     var td = dateStr(now), l = dayLog(S, td);
@@ -342,7 +370,7 @@
     INT: INT, LAG: LAG, NEW_MAX: NEW_MAX, HARD_IN: HARD_IN, HARD_MAX: HARD_MAX, FILL_FROM: FILL_FROM, TYPE_MAX: TYPE_MAX,
     setRandom: setRandom, dateStr: dateStr, parseDate: parseDate, addDays: addDays, squash: squash, clone: clone,
     init: init, card: card, normalize: normalize, blank: blank, addTime: addTime, dayLog: dayLog,
-    home: home, newWaiting: newWaiting, reviewDue: reviewDue, hardDue: hardDue, finalReview: finalReview,
+    home: home, progress: progress, newWaiting: newWaiting, reviewDue: reviewDue, hardDue: hardDue, finalReview: finalReview,
     startSession: startSession, next: next, left: left, makeQ: makeQ,
     folders: folders, startFolder: startFolder, endFolder: endFolder,
     checkFill: checkFill, checkPick: checkPick, allToday: allToday, submit: submit, report: report, exclude: exclude

@@ -87,6 +87,17 @@ details{margin-top:8px}details summary{cursor:pointer;color:var(--sub);font-size
 .fold:first-child{border-top:none;padding-top:0}
 .fold .btns{display:flex;gap:6px;flex-shrink:0}
 h2.sec{font-size:13px;font-weight:650;color:var(--sub);letter-spacing:.06em;margin:18px 0 8px}
+/* ---------- 進度與熟度 ---------- */
+.ptitle{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:6px}
+.prow{padding:10px 0;border-top:1px solid var(--line)}
+.prow:first-of-type{border-top:none}
+.phead{display:flex;justify-content:space-between;align-items:baseline}
+.pbar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--line);margin:6px 0 4px}
+.pbar i{display:block;height:100%}
+.pbar .k{background:var(--accent)}
+.pbar .r{background:color-mix(in srgb,var(--accent) 55%,var(--card))}
+.pbar .l{background:color-mix(in srgb,var(--accent) 25%,var(--card))}
+.pbar .h{background:var(--bad)}
 .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);
   background:var(--text);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:14px;z-index:50}
 </style>

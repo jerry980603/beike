@@ -164,6 +164,22 @@ t("新卡各科輪流上，同一科照匯入順序", function () {
   eq(BK.newWaiting(S), ["c#1", "c#4", "c#6", "c#2", "c#5", "c#3"]);
 });
 
+t("進度與熟度：各科張數、三段熟度、頑固卡、估完成日", function () {
+  var list = [];
+  for (var i = 1; i <= 50; i++) list.push({ id: "c#" + i, subj: i <= 30 ? "國文" : "英文", q: "＿＿", a: "a" + i, opts: ["x", "y", "z"] });
+  list.push({ id: "e#1", subj: "化學", side: "段考", folder: "化", q: "＿＿", a: "b", opts: ["x", "y", "z"] });
+  BK.init(list); var S = BK.blank(D0);
+  item(S, "c#1", { pos: 0 }); item(S, "c#2", { pos: 1 }); item(S, "c#3", { pos: 2 });
+  item(S, "c#4", { pos: 5 }); item(S, "c#5", { pos: 1, hard: true, lapses: 4 }); item(S, "c#31", { pos: 4 });
+  BK.exclude(S, "c#30", D0);
+  var p = BK.progress(S, D0), zh = p.subs[0], en = p.subs[1];
+  eq(p.subs.length, 2, "段考卡不算");
+  eq([zh.subj, zh.total, zh.started, zh.learn, zh.recall, zh.know, zh.hard], ["國文", 29, 5, 2, 1, 1, 1]);
+  eq([en.subj, en.total, en.started, en.know], ["英文", 20, 1, 1]);
+  eq(p.left, 43);
+  eq(p.done, "2026-10-22", "今天 20、明天 20、後天 3");
+});
+
 t("學測、段考分開：段考卡不進排程，只在資料夾", function () {
   BK.init(mk(3).concat([
     { id: "e#1", subj: "化學", side: "段考", folder: "化學｜氧化還原", q: "甲＿＿", a: "乙", opts: ["x", "y", "z"] },
