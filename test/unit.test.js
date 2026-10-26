@@ -157,6 +157,13 @@ t("答錯後按「不用背了」：不再考", function () {
   ok(ids.indexOf(q.id) < 0, "不再出現");
 });
 
+t("新卡各科輪流上，同一科照匯入順序", function () {
+  var list = [];
+  ["國文", "國文", "國文", "生物", "生物", "英文"].forEach(function (s, i) { list.push({ id: "c#" + (i + 1), subj: s, q: "＿＿", a: "a" + i, opts: ["x", "y", "z"] }); });
+  BK.init(list); var S = BK.blank(D0);
+  eq(BK.newWaiting(S), ["c#1", "c#4", "c#6", "c#2", "c#5", "c#3"]);
+});
+
 t("學測、段考分開：段考卡不進排程，只在資料夾", function () {
   BK.init(mk(3).concat([
     { id: "e#1", subj: "化學", side: "段考", folder: "化學｜氧化還原", q: "甲＿＿", a: "乙", opts: ["x", "y", "z"] },

@@ -111,10 +111,24 @@
   }
   function newWaiting(S) {
     var a = ORDER.filter(function (id) { return !S.items[id] && !S.excl[id]; });
-    /* 段考卡先上（考試越近越先），其他照匯入順序 */
+    /* 有考試日期的卡先上（考試越近越先）；其他各科輪流一張一張上（國、生、英、國…），
+       同一科照匯入順序。不然照檔名排，最後匯入的科目要等好幾週（2026-10-26 英文要等約 4 週） */
     var ex = a.filter(function (id) { return CARDS[id].exam; })
       .sort(function (x, y) { return CARDS[x].exam < CARDS[y].exam ? -1 : CARDS[x].exam > CARDS[y].exam ? 1 : 0; });
-    return ex.concat(a.filter(function (id) { return !CARDS[id].exam; }));
+    return ex.concat(interleave(a.filter(function (id) { return !CARDS[id].exam; })));
+  }
+  function interleave(ids) {
+    var by = {}, subs = [];
+    ids.forEach(function (id) {
+      var s = CARDS[id].subj || "";
+      if (!by[s]) { by[s] = []; subs.push(s); }
+      by[s].push(id);
+    });
+    var out = [];
+    for (var i = 0; out.length < ids.length; i++) {
+      subs.forEach(function (s) { if (i < by[s].length) out.push(by[s][i]); });
+    }
+    return out;
   }
   function live(S) { return Object.keys(S.items).filter(function (id) { return CARDS[id] && !isExam(CARDS[id]) && !S.excl[id]; }); }
   function hardDue(S, now) {
