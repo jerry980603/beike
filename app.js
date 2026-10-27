@@ -81,7 +81,7 @@
     else if (h.soon) html += '<div class="note">剛答錯的 ' + h.soon + " 張，隔 10 分鐘以上再考比較有效；晚一點再回來，或明天會排到。</div>";
     else html += '<div class="done">今天的都練完了 ✓</div>';
     if (h.min >= h.budget && todo) html += '<div class="note">今天已經練滿 ' + h.budget + " 分鐘，可以繼續，但不用勉強。</div>";
-    return html + "</div>" + progressHtml();
+    return html + "</div>" + progressHtml() + extraHtml();
   }
   /* 進度與熟度：每科一條長條（熟／記得／剛學／頑固／還沒開始） */
   function progressHtml() {
@@ -98,13 +98,14 @@
         '<i class="r" style="width:' + pct(r.recall, r.total) + '"></i>' +
         '<i class="l" style="width:' + pct(r.learn, r.total) + '"></i>' +
         '<i class="h" style="width:' + pct(r.hard, r.total) + '"></i></div>' +
-        '<div class="small">熟 ' + r.know + "・記得 " + r.recall + "・剛學 " + r.learn + "</div></div>";
+        '<div class="small">熟 ' + r.know + "・記得 " + r.recall + "・剛學 " + r.learn + (r.extra ? "　另有補充 " + r.extra : "") + "</div></div>";
     });
     return html + '<p class="small mt">熟＝隔 14 天以上還答對；記得＝填空答對過；剛學＝還在考選擇題。</p></div>';
   }
   function bindXuece() {
     var go = document.getElementById("go");
     if (go) go.onclick = start;
+    bindExam();   // 學測補充資料夾的按鈕
   }
 
   function examHtml() {
@@ -112,9 +113,20 @@
     if (!fs.length) {
       return '<div class="card"><div class="note">還沒有段考資料夾。匯入筆記時跟 Claude 說「放段考」，並說是哪一科、哪個主題。</div></div>';
     }
+    return foldersHtml(fs, true) + '<p class="small">資料夾裡會練到每張都答對一次；答錯的隔幾題再考。這裡練的不影響學測的排程。</p>';
+  }
+  /* 學測補充：重要度 1 的卡，不進每天的排程，有空進去練 */
+  function extraHtml() {
+    var fs = BK.folders(S, "補充");
+    if (!fs.length) return "";
+    return '<h2 class="sec">學測補充</h2>' + foldersHtml(fs, false) +
+      '<p class="small">比較冷僻的卡，不排進每天的複習；有空進去練到全對。覺得其實很重要，按「回報」跟 Claude 說。</p>';
+  }
+  function foldersHtml(fs, bySubj) {
     var html = "", subj = null;
+    if (!bySubj) html += '<div class="card">';
     fs.forEach(function (f) {
-      if (f.subj !== subj) {
+      if (bySubj && f.subj !== subj) {
         if (subj !== null) html += "</div>";
         subj = f.subj;
         html += '<h2 class="sec">' + esc(subj) + '</h2><div class="card">';
@@ -126,7 +138,7 @@
         '<div class="btns"><button class="btn sm soft" data-f="' + esc(f.name) + '" data-m="M">選擇</button>' +
         '<button class="btn sm" data-f="' + esc(f.name) + '" data-m="F">填空</button></div></div>';
     });
-    return html + '</div><p class="small">資料夾裡會練到每張都答對一次；答錯的隔幾題再考。這裡練的不影響學測的排程。</p>';
+    return html + "</div>";
   }
   function bindExam() {
     [].forEach.call($main.querySelectorAll(".fold button"), function (b) {

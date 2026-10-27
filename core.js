@@ -57,17 +57,25 @@
   var CARDS = {}, ORDER = [];
   /* 卡片由 beike.py build 產生：{id, subj, q, a, alt, opts, exam, ctx}；id ＝ "抄本檔名#n" */
   /* 學測卡（side 沒寫或「學測」）進排程；段考卡（side「段考」）只放在資料夾 folder，要背時自己進去練 */
-  var FOLD = {}, FOLD_ORDER = [];
+  /* 學測卡的重要度 pri（2026-10-27）：3 學測常考、課本核心；2 一般（沒寫就是 2）；1 冷僻、細節。
+     新卡先上 3 再上 2；1 不進每天的排程，放「補充｜科目」資料夾，有空自己進去練（跟段考資料夾一樣練到全對）。
+     已經開始練的 1 照樣留在排程裡，進度不丟 */
+  var FOLD = {}, FOLD_ORDER = [], FOLD_KIND = {};
   function isExam(c) { return c && c.side === "段考"; }
+  function pri(c) { return c && (c.pri === 1 || c.pri === 3) ? c.pri : 2; }
+  function isExtra(c) { return c && !isExam(c) && pri(c) === 1; }
+  function addFold(f, kind, id) {
+    if (!FOLD[f]) { FOLD[f] = []; FOLD_ORDER.push(f); FOLD_KIND[f] = kind; }
+    FOLD[f].push(id);
+  }
   function init(list) {
-    CARDS = {}; ORDER = []; FOLD = {}; FOLD_ORDER = [];
+    CARDS = {}; ORDER = []; FOLD = {}; FOLD_ORDER = []; FOLD_KIND = {};
     (list || []).forEach(function (c) {
       if (!c || !c.id || CARDS[c.id]) return;
       CARDS[c.id] = c;
-      if (!isExam(c)) { ORDER.push(c.id); return; }
-      var f = c.folder || c.subj || "未分類";
-      if (!FOLD[f]) { FOLD[f] = []; FOLD_ORDER.push(f); }
-      FOLD[f].push(c.id);
+      if (isExam(c)) { addFold(c.folder || c.subj || "未分類", "段考", c.id); return; }
+      ORDER.push(c.id);
+      if (isExtra(c)) addFold("補充｜" + (c.subj || "其他"), "補充", c.id);
     });
   }
   function card(id) { return CARDS[id] || null; }
@@ -118,12 +126,15 @@
     it.due = due;
   }
   function newWaiting(S) {
-    var a = ORDER.filter(function (id) { return !S.items[id] && !S.excl[id]; });
+    var a = ORDER.filter(function (id) { return !S.items[id] && !S.excl[id] && !isExtra(CARDS[id]); });
     /* 有考試日期的卡先上（考試越近越先）；其他各科輪流一張一張上（國、生、英、國…），
        同一科照匯入順序。不然照檔名排，最後匯入的科目要等好幾週（2026-10-26 英文要等約 4 週） */
     var ex = a.filter(function (id) { return CARDS[id].exam; })
       .sort(function (x, y) { return CARDS[x].exam < CARDS[y].exam ? -1 : CARDS[x].exam > CARDS[y].exam ? 1 : 0; });
-    return ex.concat(interleave(a.filter(function (id) { return !CARDS[id].exam; })));
+    var rest = a.filter(function (id) { return !CARDS[id].exam; });
+    /* 重要度 3 的先上，同一級裡各科輪流 */
+    return ex.concat(interleave(rest.filter(function (id) { return pri(CARDS[id]) === 3; })),
+                     interleave(rest.filter(function (id) { return pri(CARDS[id]) !== 3; })));
   }
   function interleave(ids) {
     var by = {}, subs = [];
@@ -182,10 +193,11 @@
     ORDER.forEach(function (id) {
       if (S.excl[id]) return;
       var s = CARDS[id].subj || "其他";
-      var r = subs[s] || (subs[s] = { subj: s, total: 0, started: 0, learn: 0, recall: 0, know: 0, hard: 0 });
-      if (!r.total) list.push(r);
-      r.total++;
+      var r = subs[s];
+      if (!r) { r = subs[s] = { subj: s, total: 0, started: 0, learn: 0, recall: 0, know: 0, hard: 0, extra: 0 }; list.push(r); }
       var it = S.items[id];
+      if (!it && isExtra(CARDS[id])) { r.extra++; return; }   // 補充資料夾的，不算進每天的排程
+      r.total++;
       if (!it) return;
       r.started++;
       if (it.hard) r.hard++;
@@ -267,8 +279,10 @@
   }
 
   /* ---------- 6b. 段考資料夾：進去練到全對，不影響學測排程 ---------- */
-  function folders(S) {
-    return FOLD_ORDER.map(function (f) {
+  /* kind：「段考」（沒寫就是段考，舊畫面照舊）或「補充」 */
+  function folders(S, kind) {
+    kind = kind || "段考";
+    return FOLD_ORDER.filter(function (f) { return FOLD_KIND[f] === kind; }).map(function (f) {
       var ids = FOLD[f].filter(function (id) { return !S.excl[id]; });
       return { name: f, subj: CARDS[FOLD[f][0]].subj, n: ids.length, last: (S.fd || {})[f] || null };
     }).filter(function (x) { return x.n; });
@@ -378,7 +392,7 @@
     INT: INT, LAG: LAG, NEW_MAX: NEW_MAX, HARD_IN: HARD_IN, HARD_MAX: HARD_MAX, FILL_FROM: FILL_FROM, TYPE_MAX: TYPE_MAX,
     setRandom: setRandom, dateStr: dateStr, parseDate: parseDate, addDays: addDays, squash: squash, clone: clone,
     init: init, card: card, normalize: normalize, blank: blank, addTime: addTime, dayLog: dayLog,
-    home: home, progress: progress, newWaiting: newWaiting, reviewDue: reviewDue, hardDue: hardDue, finalReview: finalReview,
+    home: home, progress: progress, newWaiting: newWaiting, pri: pri, reviewDue: reviewDue, hardDue: hardDue, finalReview: finalReview,
     startSession: startSession, next: next, left: left, makeQ: makeQ,
     folders: folders, startFolder: startFolder, endFolder: endFolder,
     checkFill: checkFill, checkPick: checkPick, allToday: allToday, submit: submit, report: report, exclude: exclude

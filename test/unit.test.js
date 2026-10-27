@@ -190,6 +190,28 @@ t("進度與熟度：各科張數、三段熟度、頑固卡、估完成日", fu
   eq(p.done, "2026-10-21", "今天 30、明天 13");
 });
 
+t("重要度：3 先上，1 放補充資料夾不排程；已開始的 1 照樣排程", function () {
+  var list = [
+    { id: "a#1", subj: "國文", q: "＿＿", a: "a1", opts: ["x", "y", "z"] },
+    { id: "a#2", subj: "國文", pri: 3, q: "＿＿", a: "a2", opts: ["x", "y", "z"] },
+    { id: "a#3", subj: "國文", pri: 1, q: "＿＿", a: "a3", opts: ["x", "y", "z"] },
+    { id: "b#1", subj: "生物", pri: 1, q: "＿＿", a: "b1", opts: ["x", "y", "z"] },
+    { id: "b#2", subj: "生物", pri: 3, q: "＿＿", a: "b2", opts: ["x", "y", "z"] },
+    { id: "b#3", subj: "生物", q: "＿＿", a: "b3", opts: ["x", "y", "z"] },
+    { id: "e#1", subj: "化學", side: "段考", folder: "化學｜氧化還原", q: "＿＿", a: "e", opts: ["x", "y", "z"] }];
+  BK.init(list); var S = BK.blank(D0);
+  eq(BK.newWaiting(S), ["a#2", "b#2", "a#1", "b#3"]);
+  eq(BK.folders(S).map(function (f) { return f.name; }), ["化學｜氧化還原"], "沒寫 kind 只給段考");
+  eq(BK.folders(S, "補充").map(function (f) { return f.name + f.n; }), ["補充｜國文1", "補充｜生物1"]);
+  item(S, "a#3", { pos: 2, due: D0 });
+  ok(BK.reviewDue(S, D0).indexOf("a#3") >= 0, "已開始的重要度 1 照樣複習");
+  var p = BK.progress(S, D0), zh = p.subs[0], bio = p.subs[1];
+  eq([zh.total, zh.extra, bio.total, bio.extra], [3, 0, 2, 1]);
+  var s = BK.startFolder(S, "補充｜生物", "M", D0), q = BK.next(S, s, D0);
+  eq(q.id, "b#1"); BK.submit(S, s, q, { ok: true, rt: 1000 }, D0);
+  ok(!S.items["b#1"], "資料夾練習不建立排程進度");
+});
+
 t("學測、段考分開：段考卡不進排程，只在資料夾", function () {
   BK.init(mk(3).concat([
     { id: "e#1", subj: "化學", side: "段考", folder: "化學｜氧化還原", q: "甲＿＿", a: "乙", opts: ["x", "y", "z"] },
