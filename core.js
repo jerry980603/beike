@@ -15,12 +15,13 @@
   var MAXPOS = INT.length - 1;
   var FILL_FROM = 2;          // pos ≥ 2 改考填空（先選後填：Kang 等 2007、Rowland 2014）
   var TYPE_MAX = 6;           // 答案不超過 6 個字：打字自動對；更長：想好後自己判對錯
-  var NEW_MAX = 20;           // 每天最多上幾張新卡
+  /* 每天最多上幾張新卡。2026-10-27 從 20 改 30：卡片到 779 張，模擬每天 20 張到 1/10 會剩下沒碰到的（data/背科/建構紀錄.md） */
+  var NEW_MAX = 30;
   var HARD_IN = 4, HARD_MAX = 10, HARD_OUT = 2;   // 答錯 4 次變頑固卡；每天最多 10 張；不同天答對 2 次畢業
   var LAG = 10;               // 答錯後再考至少隔 10 題（看完答案馬上考只考到短期記憶）
   var RECENT = 10 * 60000;    // 重開練習時，10 分鐘內剛答過的也要先隔 LAG 題
   var EV_KEEP = 20000;
-  var DEF_SET = { budget: 15, floor: 5, newMax: NEW_MAX, learnEnd: "2027-01-10", finalDay: "2027-01-20" };
+  var DEF_SET = { budget: 20, floor: 5, newMax: NEW_MAX, learnEnd: "2027-01-10", finalDay: "2027-01-20", sv: 2 };
 
   /* ---------- 1. 小工具 ---------- */
   var rnd = Math.random;
@@ -77,7 +78,14 @@
     S.v = 1;
     S.items = S.items || {};
     S.log = S.log || {};
+    var old = S.set && !S.set.sv;
     S.set = Object.assign({}, DEF_SET, S.set || {});
+    /* 設定第 2 版（2026-10-27）：舊存檔還是舊的預設值（新卡 20、目標 15 分）就換成新的；自己改過的不動 */
+    if (old) {
+      if (S.set.newMax === 20) S.set.newMax = NEW_MAX;
+      if (S.set.budget === 15) S.set.budget = DEF_SET.budget;
+      S.set.sv = 2;
+    }
     S.excl = S.excl || {};
     S.bad = S.bad || [];
     S.ev = S.ev || [];

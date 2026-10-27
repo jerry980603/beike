@@ -92,9 +92,9 @@ t("填空：長答案自己判、打字不管全形和標點、alt 也算對", f
   eq(BK.makeQ(S, "x#2", "F").mode, "self");
 });
 
-t("新卡每天最多 20 張，明天再上", function () {
-  BK.init(mk(25)); var S = BK.blank(D0), s = BK.startSession(S, D0);
-  eq(s.queue.length, 20);
+t("新卡每天最多 30 張，明天再上", function () {
+  BK.init(mk(35)); var S = BK.blank(D0), s = BK.startSession(S, D0);
+  eq(s.queue.length, 30);
   var q; while ((q = BK.next(S, s, D0))) ans(S, s, q, true, D0);
   eq(BK.home(S, D0).newToday, 0); eq(BK.home(S, D0).newWaiting, 5);
   eq(BK.home(S, day(1)).newToday, 5);
@@ -105,7 +105,7 @@ t("今天全部上：只有今天不限新卡，明天恢復", function () {
   BK.allToday(S, D0);
   eq(BK.home(S, D0).newToday, 58);
   var s = BK.startSession(S, D0); eq(s.queue.length, 58);
-  BK.init(mk(80)); eq(BK.home(S, day(1)).newToday, 20);
+  BK.init(mk(80)); eq(BK.home(S, day(1)).newToday, 30);
 });
 
 t("先複習、再上新卡；段考卡先上", function () {
@@ -157,6 +157,16 @@ t("答錯後按「不用背了」：不再考", function () {
   ok(ids.indexOf(q.id) < 0, "不再出現");
 });
 
+t("設定第 2 版：舊存檔的預設值換成新卡 30、目標 20；自己改過的不動", function () {
+  var a = BK.normalize({ set: { budget: 15, newMax: 20 } });
+  eq([a.set.budget, a.set.newMax, a.set.sv], [20, 30, 2]);
+  var b = BK.normalize({ set: { budget: 30, newMax: 20 } });
+  eq([b.set.budget, b.set.newMax], [30, 30]);
+  var c = BK.normalize({ set: { budget: 15, newMax: 20, sv: 2 } });
+  eq([c.set.budget, c.set.newMax], [15, 20], "第 2 版之後改回 15／20 就照使用者的");
+  eq([BK.blank(D0).set.budget, BK.blank(D0).set.newMax], [20, 30]);
+});
+
 t("新卡各科輪流上，同一科照匯入順序", function () {
   var list = [];
   ["國文", "國文", "國文", "生物", "生物", "英文"].forEach(function (s, i) { list.push({ id: "c#" + (i + 1), subj: s, q: "＿＿", a: "a" + i, opts: ["x", "y", "z"] }); });
@@ -177,7 +187,7 @@ t("進度與熟度：各科張數、三段熟度、頑固卡、估完成日", fu
   eq([zh.subj, zh.total, zh.started, zh.learn, zh.recall, zh.know, zh.hard], ["國文", 29, 5, 2, 1, 1, 1]);
   eq([en.subj, en.total, en.started, en.know], ["英文", 20, 1, 1]);
   eq(p.left, 43);
-  eq(p.done, "2026-10-22", "今天 20、明天 20、後天 3");
+  eq(p.done, "2026-10-21", "今天 30、明天 13");
 });
 
 t("學測、段考分開：段考卡不進排程，只在資料夾", function () {
