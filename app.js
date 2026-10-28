@@ -80,6 +80,8 @@
     if (todo) html += '<button class="btn" id="go">開始</button>';
     else if (h.soon) html += '<div class="note">剛答錯的 ' + h.soon + " 張，隔 10 分鐘以上再考比較有效；晚一點再回來，或明天會排到。</div>";
     else html += '<div class="done">今天的都練完了 ✓</div>';
+    /* 今天的新卡上完了還想多練：一次多 10 張，明天照常 */
+    if (!h.newToday && h.newWaiting) html += '<button class="btn ghost mt" id="more">再來 10 張新卡</button>';
     if (h.min >= h.budget && todo) html += '<div class="note">今天已經練滿 ' + h.budget + " 分鐘，可以繼續，但不用勉強。</div>";
     return html + "</div>" + progressHtml() + extraHtml();
   }
@@ -105,6 +107,8 @@
   function bindXuece() {
     var go = document.getElementById("go");
     if (go) go.onclick = start;
+    var more = document.getElementById("more");
+    if (more) more.onclick = function () { BK.moreNew(S, Date.now(), 10); save(); home(); };
     bindExam();   // 學測補充資料夾的按鈕
   }
 

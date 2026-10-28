@@ -165,8 +165,10 @@
     var l = dayLog(S, dateStr(now));
     if (l.all) return 100000;                        // 「今天全部上」（段考前一天用），只有今天
     if (dateStr(now) > S.set.learnEnd) return 0;    // 考前 10 天不學新東西
-    return Math.max(0, S.set.newMax - l.n);
+    return Math.max(0, S.set.newMax + (l.plus || 0) - l.n);
   }
+  /* 「再來 10 張」：今天的練完了還想多練，今天的新卡額度多 k 張，明天照常 */
+  function moreNew(S, now, k) { var l = dayLog(S, dateStr(now)); l.plus = (l.plus || 0) + (k || 10); S.mtime = now; }
   /* 段考前一天：今天不限新卡數，明天自動恢復 */
   function allToday(S, now) { dayLog(S, dateStr(now)).all = 1; S.mtime = now; }
   /* 考前總複習：learnEnd 之後第一次練習，把考前不會再到期的卡平均排到 finalDay，
@@ -395,7 +397,7 @@
     home: home, progress: progress, newWaiting: newWaiting, pri: pri, reviewDue: reviewDue, hardDue: hardDue, finalReview: finalReview,
     startSession: startSession, next: next, left: left, makeQ: makeQ,
     folders: folders, startFolder: startFolder, endFolder: endFolder,
-    checkFill: checkFill, checkPick: checkPick, allToday: allToday, submit: submit, report: report, exclude: exclude
+    checkFill: checkFill, checkPick: checkPick, allToday: allToday, moreNew: moreNew, submit: submit, report: report, exclude: exclude
   };
   root.BK = BK;
   if (typeof module !== "undefined" && module.exports) module.exports = BK;

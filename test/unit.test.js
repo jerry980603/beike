@@ -190,6 +190,16 @@ t("進度與熟度：各科張數、三段熟度、頑固卡、估完成日", fu
   eq(p.done, "2026-10-21", "今天 30、明天 13");
 });
 
+t("再來 10 張：今天多 10 張新卡，明天照常", function () {
+  BK.init(mk(60)); var S = BK.blank(D0), s = BK.startSession(S, D0), q;
+  while ((q = BK.next(S, s, D0))) ans(S, s, q, true, D0);
+  eq(BK.home(S, D0).newToday, 0);
+  BK.moreNew(S, D0, 10); eq(BK.home(S, D0).newToday, 10);
+  var s2 = BK.startSession(S, D0); eq(s2.queue.length, 10);
+  BK.moreNew(S, D0, 10); eq(BK.home(S, D0).newToday, 20);
+  eq(BK.home(S, day(1)).newToday, 30, "明天照常 30 張");
+});
+
 t("重要度：3 先上，1 放補充資料夾不排程；已開始的 1 照樣排程", function () {
   var list = [
     { id: "a#1", subj: "國文", q: "＿＿", a: "a1", opts: ["x", "y", "z"] },
