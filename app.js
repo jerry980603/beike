@@ -73,15 +73,20 @@
     if (!h.total) {
       return html + '<div class="note">還沒有學測卡片。把要背的筆記拍照，放進電腦的 <b>data/背科/待匯入/</b>，跟 Claude 說「匯入背科」。</div></div>';
     }
-    html += '<ul class="plan">' +
-      (h.hard ? "<li><span>頑固卡</span><span class='n'>" + h.hard + "</span></li>" : "") +
-      "<li><span>到期複習</span><span class='n'>" + h.due + "</span></li>" +
-      "<li><span>新卡</span><span class='n'>" + h.newToday + (h.newWaiting > h.newToday ? "（另外 " + (h.newWaiting - h.newToday) + " 張排隊）" : "") + "</span></li></ul>";
-    if (todo) html += '<button class="btn" id="go">開始</button>';
+    /* 分科（2026-11-08）：每科一行，各自開始；最上面「全部混著練」 */
+    html += '<div class="subs">';
+    BK.subjects(S, Date.now()).forEach(function (x) {
+      var n = x.hard + x.due + x.newToday;
+      html += '<div class="sub-row"><div><b>' + esc(x.subj) + '</b><div class="small">到期 ' + (x.hard + x.due) + "・新卡 " + x.newToday +
+        (x.newWaiting > x.newToday ? "（排隊 " + (x.newWaiting - x.newToday) + "）" : "") + "</div></div>" +
+        (n ? '<button class="btn sm" data-subj="' + esc(x.subj) + '">開始</button>'
+           : x.newWaiting ? '<button class="btn sm ghost" data-more="' + esc(x.subj) + '">再來 10 張</button>'
+           : '<span class="done small">完成 ✓</span>') + "</div>";
+    });
+    html += "</div>";
+    if (todo) html += '<button class="btn mt" id="go">全部混著練（' + todo + " 張）</button>";
     else if (h.soon) html += '<div class="note">剛答錯的 ' + h.soon + " 張，隔 10 分鐘以上再考比較有效；晚一點再回來，或明天會排到。</div>";
-    else html += '<div class="done">今天的都練完了 ✓</div>';
-    /* 今天的新卡上完了還想多練：一次多 10 張，明天照常 */
-    if (!h.newToday && h.newWaiting) html += '<button class="btn ghost mt" id="more">再來 10 張新卡</button>';
+    else html += '<div class="done mt">今天的都練完了 ✓</div>';
     if (h.min >= h.budget && todo) html += '<div class="note">今天已經練滿 ' + h.budget + " 分鐘，可以繼續，但不用勉強。</div>";
     return html + "</div>" + progressHtml() + extraHtml();
   }
@@ -106,9 +111,10 @@
   }
   function bindXuece() {
     var go = document.getElementById("go");
-    if (go) go.onclick = start;
-    var more = document.getElementById("more");
-    if (more) more.onclick = function () { BK.moreNew(S, Date.now(), 10); save(); home(); };
+    if (go) go.onclick = function () { start(); };
+    [].forEach.call($main.querySelectorAll("[data-subj]"), function (b) { b.onclick = function () { start(b.dataset.subj); }; });
+    /* 這科今天的新卡上完了還想多練：這科多 10 張，明天照常 */
+    [].forEach.call($main.querySelectorAll("[data-more]"), function (b) { b.onclick = function () { BK.moreNew(S, Date.now(), 10, b.dataset.more); save(); home(); }; });
     bindExam();   // 學測補充資料夾的按鈕
   }
 
@@ -195,7 +201,7 @@
   }
 
   /* ---------- 練習 ---------- */
-  function start() { begin(BK.startSession(S, Date.now())); }
+  function start(subj) { begin(BK.startSession(S, Date.now(), subj)); }
   function startDrill(name, f) { begin(BK.startFolder(S, name, f, Date.now())); }
   function begin(x) {
     sess = x;
@@ -220,7 +226,8 @@
       html += '<div class="opts">' + cur.opts.map(function (o, i) { return '<button class="opt" data-i="' + i + '">' + esc(o) + "</button>"; }).join("") +
         '<button class="opt idk" data-i="-1">不知道</button></div>';
     } else if (cur.mode === "type") {
-      html += '<input id="inp" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="填入空格的答案">' +
+      html += (cur.hint ? '<p class="small">' + esc(cur.hint) + "</p>" : "") +
+        '<input id="inp" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="填入空格的答案">' +
         '<div class="row mt"><button class="btn ghost" id="idk">不知道</button><button class="btn" id="send">送出</button></div>';
     } else {
       html += '<p class="sub">先在心裡（或紙上）想好答案，再看答案。</p><button class="btn" id="show">看答案</button>';
@@ -260,7 +267,7 @@
     document.getElementById("ans").innerHTML =
       '<div class="fb bad">你寫：<b>' + esc(v) + '</b><br>答案：<span class="ans">' + esc(cur.card.a) + "</span>" +
       ctxHtml() + '</div><div class="row mt"><button class="btn ghost" id="isOk">其實算對</button><button class="btn" id="isBad">算錯</button></div>';
-    document.getElementById("isOk").onclick = function () { done(true, v, r); };
+    document.getElementById("isOk").onclick = function () { done(true, v, r, 2); };
     document.getElementById("isBad").onclick = function () { done(false, v, r); };
   }
   function showSelf() {
@@ -274,8 +281,8 @@
   }
   function ctxHtml() { return cur.card.ctx ? '<div class="ctx">筆記：' + esc(cur.card.ctx) + "</div>" : ""; }
 
-  function done(good, pick, r) {
-    var q = cur, res = BK.submit(S, sess, q, { ok: good, rt: r == null ? rt() : r, pick: pick }, Date.now());
+  function done(good, pick, r, grade) {
+    var q = cur, res = BK.submit(S, sess, q, { ok: good, rt: r == null ? rt() : r, pick: pick, grade: grade }, Date.now());
     stats.n++; if (good) stats.ok++;
     save();
     var box = document.getElementById("ans"), html = "";

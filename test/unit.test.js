@@ -16,23 +16,29 @@ function mk(n, extra) {
 }
 /* 答一題：ok 為 true/false */
 function ans(S, sess, q, good, now) { return BK.submit(S, sess, q, { ok: good, rt: 3000, pick: good ? q.card.a : "甲" }, now); }
-function item(S, id, o) { S.items[id] = Object.assign({ pos: 0, due: 0, seen: 1, right: 1, wrong: 0, lapses: 0, hard: false, hardOk: [], lastUp: "", lastDn: "", lastAt: 0 }, o); }
+/* 塞一筆舊格式的進度，再跑 normalize 換成記憶模型（跟真的舊存檔一樣） */
+function item(S, id, o) { S.items[id] = Object.assign({ pos: 0, due: 0, seen: 1, right: 1, wrong: 0, lapses: 0, hard: false, hardOk: [], lastUp: "", lastDn: "", lastAt: 0 }, o); BK.normalize(S); }
+/* 舊測試用：國文每天 30 張新卡（新的預設是英 12、生 12、國 6） */
+function B30() { var S = BK.blank(D0); S.set.newBy["國文"] = 30; return S; }
 
-t("新卡先測答對 → pos 1、明天", function () {
+t("新卡先測答對 → 記成勉強，約 1 天後考填空", function () {
   BK.init(mk(1)); var S = BK.blank(D0), s = BK.startSession(S, D0), q = BK.next(S, s, D0);
   eq(q.kind, "P"); eq(q.fmt, "M"); eq(q.opts.length, 4);
   ans(S, s, q, true, D0);
-  eq(S.items["d#1"].pos, 1); eq(S.items["d#1"].due, BK.addDays(D0, 1));
+  var it = S.items["d#1"];
+  eq(it.due, BK.addDays(D0, 1)); ok(it.fl, "下次考填空"); ok(Math.abs(it.s - 1.4003) < 1e-6, "穩定度＝勉強的初始值");
   eq(BK.next(S, s, D0), null);
+  eq(BK.makeQ(S, "d#1", "V").fmt, "F");
 });
 
-t("新卡先測答錯 → 隔 10 題再考、答對 pos 1", function () {
-  BK.init(mk(12)); var S = BK.blank(D0), s = BK.startSession(S, D0);
+t("新卡先測答錯 → 隔 10 題再考、答對明天再考選擇題", function () {
+  BK.init(mk(12)); var S = B30(), s = BK.startSession(S, D0);
   var q = BK.next(S, s, D0); ans(S, s, q, false, D0);
   var seen = [];
   for (var i = 0; i < 11; i++) { var x = BK.next(S, s, D0); seen.push(x.id + x.kind); ans(S, s, x, true, D0); }
   eq(seen.indexOf("d#1L"), 10, "第 11 題才再考");
-  eq(S.items["d#1"].pos, 1); eq(S.items["d#1"].lapses, 0, "學新卡答錯不算 lapses");
+  var it = S.items["d#1"];
+  eq(it.due, BK.addDays(D0, 1)); ok(!it.fl, "剛看過答案，明天還是選擇題"); eq(it.lapses, 0, "學新卡答錯不算 lapses");
 });
 
 t("隔不開的再考留到明天", function () {
@@ -42,25 +48,42 @@ t("隔不開的再考留到明天", function () {
   ok(BK.reviewDue(S, day(1)).indexOf("d#1") >= 0, "明天會排到");
 });
 
-t("複習答對升一階、間隔照表；一天只升一次", function () {
+t("複習答對：穩定度變大、間隔拉長；同一天再答對不再算", function () {
   BK.init(mk(1)); var S = BK.blank(D0); item(S, "d#1", { pos: 2, due: D0 });
+  var it = S.items["d#1"]; eq(it.s, 3, "舊的第 2 階換成穩定度 3 天"); ok(it.fl);
   var s = BK.startSession(S, D0), q = BK.next(S, s, D0);
-  eq(q.fmt, "F", "pos 2 考填空"); eq(q.mode, "type");
+  eq(q.fmt, "F", "答對過選擇題就考填空"); eq(q.mode, "type");
   ans(S, s, q, true, D0);
-  eq(S.items["d#1"].pos, 3); eq(S.items["d#1"].due, BK.addDays(D0, 7));
-  S.items["d#1"].due = D0;
+  ok(it.s > 8 && it.s < 16, "到期時答對，穩定度約變 4 倍：" + it.s);
+  eq(it.due, BK.addDays(D0, Math.round(it.s)));
+  var s0 = it.s; it.due = D0;
   var s2 = BK.startSession(S, D0 + 3600000); ans(S, s2, BK.next(S, s2, D0 + 3600000), true, D0 + 3600000);
-  eq(S.items["d#1"].pos, 3, "同一天不再升"); eq(S.items["d#1"].due, BK.addDays(D0, 1));
+  eq(it.s, s0, "同一天不再更新"); eq(it.due, BK.addDays(D0, 1));
 });
 
-t("複習答錯：降一階、lapses+1、隔 10 題再考；同一天再錯不再扣", function () {
+t("「其實算對」記成勉強，間隔比記得短", function () {
+  BK.init(mk(2)); var S = BK.blank(D0); item(S, "d#1", { pos: 2, due: D0 }); item(S, "d#2", { pos: 2, due: D0 });
+  var s = BK.startSession(S, D0), a = BK.next(S, s, D0), b = BK.next(S, s, D0);
+  BK.submit(S, s, a, { ok: true, rt: 3000, grade: 2 }, D0); ans(S, s, b, true, D0);
+  ok(S.items[a.id].s < S.items[b.id].s, "勉強 < 記得");
+});
+
+t("到期的先考最可能忘的（記得機率最低的先）", function () {
+  BK.init(mk(3)); var S = BK.blank(D0);
+  item(S, "d#1", { pos: 4, due: D0 }); item(S, "d#2", { pos: 2, due: D0 - 5 * 86400000 }); item(S, "d#3", { pos: 1, due: D0 - 86400000 });
+  eq(BK.reviewDue(S, D0), ["d#2", "d#3", "d#1"]);
+});
+
+t("複習答錯：穩定度變小、lapses+1、隔 10 題再考；同一天再錯不再扣", function () {
   BK.init(mk(1)); var S = BK.blank(D0); item(S, "d#1", { pos: 3, due: D0 });
+  var it = S.items["d#1"], s0 = it.s;
   var s = BK.startSession(S, D0); ans(S, s, BK.next(S, s, D0), false, D0);
-  var it = S.items["d#1"]; eq(it.pos, 2); eq(it.lapses, 1); eq(s.later[0].after, 1 + BK.LAG);
+  ok(it.s < s0 / 2, "穩定度變小：" + s0 + " → " + it.s); eq(it.lapses, 1); eq(s.later[0].after, 1 + BK.LAG);
+  var s1 = it.s;
   s.n += 10; var r = BK.next(S, s, D0); eq(r.kind, "R");
-  ans(S, s, r, false, D0); eq(it.pos, 2); eq(it.lapses, 1);
+  ans(S, s, r, false, D0); eq(it.s, s1); eq(it.lapses, 1);
   s.n += 10; ans(S, s, BK.next(S, s, D0), true, D0);
-  eq(it.pos, 2, "再考答對不升"); eq(it.due, BK.addDays(D0, 1));
+  eq(it.s, s1, "再考答對不更新"); eq(it.due, BK.addDays(D0, 1));
 });
 
 t("答錯 4 次變頑固卡；不同天答對 2 次畢業", function () {
@@ -70,7 +93,7 @@ t("答錯 4 次變頑固卡；不同天答對 2 次畢業", function () {
   var s1 = BK.startSession(S, day(1)), q = BK.next(S, s1, day(1)); eq(q.kind, "H");
   ans(S, s1, q, true, day(1)); ok(S.items["d#1"].hard, "一天還不夠");
   var s2 = BK.startSession(S, day(2)); ans(S, s2, BK.next(S, s2, day(2)), true, day(2));
-  var it = S.items["d#1"]; ok(!it.hard); eq(it.lapses, 0); eq(it.pos, 1);
+  var it = S.items["d#1"]; ok(!it.hard); eq(it.lapses, 0);
 });
 
 t("頑固卡每天最多 10 張、等最久的先", function () {
@@ -88,16 +111,32 @@ t("填空：長答案自己判、打字不管全形和標點、alt 也算對", f
   var m = { id: "x#3", a: "−5×1" }, mn = { id: "x#4", a: "Mn²⁺" }, d = { id: "x#5", a: "+2.5" };
   ok(BK.checkFill(m, "-5x1")); ok(BK.checkFill(m, "－5*1")); ok(!BK.checkFill(m, "5x1"), "負號不能省");
   ok(BK.checkFill(mn, "Mn2+")); ok(!BK.checkFill(mn, "Mn2")); ok(BK.checkFill(d, "+2.5")); ok(!BK.checkFill(d, "+25"), "小數點不能省");
-  var S = BK.blank(D0); item(S, "x#2", { pos: 2, due: D0 });
-  eq(BK.makeQ(S, "x#2", "F").mode, "self");
+  var S = BK.blank(D0); item(S, "x#2", { pos: 2, due: D0 }); item(S, "x#1", { pos: 2, due: D0 });
+  eq(BK.makeQ(S, "x#2", "V").mode, "self");
+  var q1 = BK.makeQ(S, "x#1", "V"); eq(q1.mode, "type"); ok(q1.hint, "有上下標要提示怎麼打");
+  ok(!BK.makeQ(S, "x#2", "V").hint);
 });
 
-t("新卡每天最多 30 張，明天再上", function () {
-  BK.init(mk(35)); var S = BK.blank(D0), s = BK.startSession(S, D0);
+t("各科新卡額度：英 12、生 12、國 6，明天再上", function () {
+  var list = [];
+  ["國文", "生物", "英文"].forEach(function (sj) { for (var i = 1; i <= 20; i++) list.push({ id: sj + "#" + i, subj: sj, q: "第" + i + "＿＿", a: sj + i, opts: ["x", "y", "z"] }); });
+  BK.init(list); var S = BK.blank(D0), s = BK.startSession(S, D0);
   eq(s.queue.length, 30);
+  var cnt = {}; s.queue.forEach(function (x) { var k = x.id.split("#")[0]; cnt[k] = (cnt[k] || 0) + 1; });
+  eq(cnt, { "國文": 6, "生物": 12, "英文": 12 });
+  eq(BK.home(S, D0, "英文").newToday, 12);
   var q; while ((q = BK.next(S, s, D0))) ans(S, s, q, true, D0);
-  eq(BK.home(S, D0).newToday, 0); eq(BK.home(S, D0).newWaiting, 5);
-  eq(BK.home(S, day(1)).newToday, 5);
+  eq(BK.home(S, D0).newToday, 0); eq(BK.home(S, D0, "國文").newWaiting, 14);
+  eq(BK.home(S, day(1), "國文").newToday, 6); eq(BK.home(S, day(1), "英文").newToday, 8);
+});
+
+t("只練一科：只出那一科的到期卡和新卡", function () {
+  var list = [];
+  ["國文", "英文"].forEach(function (sj) { for (var i = 1; i <= 3; i++) list.push({ id: sj + "#" + i, subj: sj, q: "第" + i + "＿＿", a: sj + i, opts: ["x", "y", "z"] }); });
+  BK.init(list); var S = BK.blank(D0); item(S, "國文#1", { pos: 2, due: D0 }); item(S, "英文#1", { pos: 2, due: D0 });
+  var s = BK.startSession(S, D0, "英文");
+  eq(s.queue.map(function (x) { return x.id + x.kind; }), ["英文#1V", "英文#2P", "英文#3P"]);
+  eq(BK.subjects(S, D0).map(function (h) { return h.subj + h.due + "/" + h.newToday; }), ["國文1/2", "英文1/2"]);
 });
 
 t("今天全部上：只有今天不限新卡，明天恢復", function () {
@@ -105,7 +144,7 @@ t("今天全部上：只有今天不限新卡，明天恢復", function () {
   BK.allToday(S, D0);
   eq(BK.home(S, D0).newToday, 58);
   var s = BK.startSession(S, D0); eq(s.queue.length, 58);
-  BK.init(mk(80)); eq(BK.home(S, day(1)).newToday, 30);
+  BK.init(mk(80)); eq(BK.home(S, day(1)).newToday, 6, "明天恢復國文每天 6 張");
 });
 
 t("先複習、再上新卡；段考卡先上", function () {
@@ -122,7 +161,7 @@ t("段考卡：下次日期不超過考前一天", function () {
   eq(BK.dateStr(S.items["d#1"].due), "2026-10-25");
   var after = new Date(2026, 9, 27, 20).getTime(); S.items["d#1"].due = after;
   var s2 = BK.startSession(S, after); ans(S, s2, BK.next(S, s2, after), true, after);
-  eq(S.items["d#1"].due, BK.addDays(after, 30), "考完照常（pos 4 → 5，30 天）");
+  ok(S.items["d#1"].due > BK.addDays(after, 7), "考完照常拉長");
 });
 
 t("10 分鐘內剛答過的，重開練習也要隔 10 題", function () {
@@ -150,7 +189,7 @@ t("作廢的卡不再出現；卡片被刪掉的進度不出錯", function () {
 });
 
 t("答錯後按「不用背了」：不再考", function () {
-  BK.init(mk(12)); var S = BK.blank(D0), s = BK.startSession(S, D0);
+  BK.init(mk(12)); var S = B30(), s = BK.startSession(S, D0);
   var q = BK.next(S, s, D0); ans(S, s, q, false, D0); BK.exclude(S, q.id, D0, s);
   eq(BK.left(s), 11); var x, ids = [];
   while ((x = BK.next(S, s, D0))) { ids.push(x.id); ans(S, s, x, true, D0); }
@@ -159,11 +198,14 @@ t("答錯後按「不用背了」：不再考", function () {
 
 t("設定第 2 版：舊存檔的預設值換成新卡 30、目標 20；自己改過的不動", function () {
   var a = BK.normalize({ set: { budget: 15, newMax: 20 } });
-  eq([a.set.budget, a.set.newMax, a.set.sv], [20, 30, 2]);
+  eq([a.set.budget, a.set.newMax, a.set.sv], [20, 30, 3]);
+  eq(a.set.newBy, { "英文": 12, "生物": 12, "國文": 6 }, "第 3 版加各科額度");
   var b = BK.normalize({ set: { budget: 30, newMax: 20 } });
   eq([b.set.budget, b.set.newMax], [30, 30]);
   var c = BK.normalize({ set: { budget: 15, newMax: 20, sv: 2 } });
   eq([c.set.budget, c.set.newMax], [15, 20], "第 2 版之後改回 15／20 就照使用者的");
+  var d = BK.normalize({ set: { sv: 3, newBy: { "英文": 20 } } });
+  eq(d.set.newBy, { "英文": 20 }, "自己改過的額度不動");
   eq([BK.blank(D0).set.budget, BK.blank(D0).set.newMax], [20, 30]);
 });
 
@@ -184,20 +226,23 @@ t("進度與熟度：各科張數、三段熟度、頑固卡、估完成日", fu
   BK.exclude(S, "c#30", D0);
   var p = BK.progress(S, D0), zh = p.subs[0], en = p.subs[1];
   eq(p.subs.length, 2, "段考卡不算");
-  eq([zh.subj, zh.total, zh.started, zh.learn, zh.recall, zh.know, zh.hard], ["國文", 29, 5, 2, 1, 1, 1]);
+  eq([zh.subj, zh.total, zh.started, zh.learn, zh.recall, zh.know, zh.hard], ["國文", 29, 5, 1, 2, 1, 1]);
   eq([en.subj, en.total, en.started, en.know], ["英文", 20, 1, 1]);
   eq(p.left, 43);
-  eq(p.done, "2026-10-21", "今天 30、明天 13");
+  eq([zh.left, zh.done, en.left, en.done], [24, "2026-10-23", 19, "2026-10-21"], "國文每天 6 張、英文 12 張");
+  eq(p.done, "2026-10-23", "全部上完看最慢的那科");
 });
 
-t("再來 10 張：今天多 10 張新卡，明天照常", function () {
+t("再來 10 張：今天多 10 張新卡（可以只加一科），明天照常", function () {
   BK.init(mk(60)); var S = BK.blank(D0), s = BK.startSession(S, D0), q;
   while ((q = BK.next(S, s, D0))) ans(S, s, q, true, D0);
   eq(BK.home(S, D0).newToday, 0);
   BK.moreNew(S, D0, 10); eq(BK.home(S, D0).newToday, 10);
   var s2 = BK.startSession(S, D0); eq(s2.queue.length, 10);
-  BK.moreNew(S, D0, 10); eq(BK.home(S, D0).newToday, 20);
-  eq(BK.home(S, day(1)).newToday, 30, "明天照常 30 張");
+  while ((q = BK.next(S, s2, D0))) ans(S, s2, q, true, D0);
+  eq(BK.home(S, D0).newToday, 0, "加的 10 張用完了");
+  BK.moreNew(S, D0, 10, "國文"); eq(BK.home(S, D0, "國文").newToday, 10);
+  eq(BK.home(S, day(1)).newToday, 6, "明天照常國文 6 張");
 });
 
 t("重要度：3 先上，1 放補充資料夾不排程；已開始的 1 照樣排程", function () {
@@ -250,6 +295,16 @@ t("段考資料夾：練到每張都答對一次；不影響學測排程", funct
   var r = BK.endFolder(S, s, D0);
   eq([r.ok, r.n, r.done], [4, 6, true]); eq(S.fd["化"].t, "2026-10-20");
   var s2 = BK.startFolder(S, "化", "M", D0); eq(BK.next(S, s2, D0).opts.length, 4);
+});
+
+t("舊存檔換成記憶模型：穩定度、上次複習、填空", function () {
+  BK.init(mk(2)); var S = BK.blank(D0);
+  S.items["d#1"] = { pos: 4, due: D0 + 3 * 86400000, lapses: 2 }; S.items["d#2"] = { pos: 0, due: D0 };
+  BK.normalize(S);
+  var a = S.items["d#1"], b = S.items["d#2"];
+  eq([a.s, a.d, a.fl, a.lr], [14, 6, true, D0 - 11 * 86400000]);
+  eq([b.s, b.fl], [0.5, false]);
+  var before = JSON.stringify(S.items); BK.normalize(S); eq(JSON.stringify(S.items), before, "再跑一次不變");
 });
 
 t("事件紀錄與每日紀錄", function () {

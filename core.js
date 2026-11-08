@@ -1,7 +1,9 @@
 /* ============================================================
    背科練習 — 核心邏輯（core.js）
    純邏輯、不碰 DOM：排程、出題、對答案。瀏覽器用 window.BK；Node 用 require。
-   設計：學測作戰室 data/背科/設計.md。規則照單字 v2（docs/單字改版設計.md），程式另外寫。
+   設計：學測作戰室 data/背科/設計.md。
+   排程（2026-11-08 改）：每張卡一份記憶模型（FSRS-4.5 的公式和預設參數），預估記得的機率掉到 90% 時再考；
+   答錯練到對（連續再學習）、新卡先測、考前總複習照舊。學測卡分國文／生物／英文，各科有自己的新卡額度。
    用法：init(卡片) → normalize(存檔) 或 blank(now) → home(S, now) → startSession →
          反覆 next / submit；介面另外呼叫 addTime 記時間。
    ============================================================ */
@@ -21,7 +23,13 @@
   var LAG = 10;               // 答錯後再考至少隔 10 題（看完答案馬上考只考到短期記憶）
   var RECENT = 10 * 60000;    // 重開練習時，10 分鐘內剛答過的也要先隔 LAG 題
   var EV_KEEP = 20000;
-  var DEF_SET = { budget: 20, floor: 5, newMax: NEW_MAX, learnEnd: "2027-01-10", finalDay: "2027-01-20", sv: 2 };
+  /* 各科每天的新卡額度（2026-11-08 使用者同意：英文最弱，英、生各 12，國 6）；沒列的科目 6 */
+  var NEW_BY = { "英文": 12, "生物": 12, "國文": 6 }, NEW_OTHER = 6;
+  var DEF_SET = { budget: 20, floor: 5, newMax: NEW_MAX, newBy: NEW_BY, learnEnd: "2027-01-10", finalDay: "2027-01-20", sv: 3 };
+  /* 記憶模型：FSRS-4.5 的預設參數（Jarrett Ye，open-spaced-repetition）。S＝穩定度（天）：隔 S 天還記得的機率約 90%；
+     D＝難度 1～10。之後有足夠的作答紀錄可以用自己的資料重算參數 */
+  var W = [0.4872, 1.4003, 3.7145, 13.8206, 5.1618, 1.2298, 0.8975, 0.031, 1.6474, 0.1367, 1.0461, 2.1072, 0.0793, 0.3246, 1.587, 0.2272, 2.8755];
+  var MAX_IVL = 60;           // 最長隔 60 天（考試在 1/22，再長沒意義）
 
   /* ---------- 1. 小工具 ---------- */
   var rnd = Math.random;
@@ -94,6 +102,9 @@
       if (S.set.budget === 15) S.set.budget = DEF_SET.budget;
       S.set.sv = 2;
     }
+    /* 設定第 3 版（2026-11-08）：加各科新卡額度 */
+    if (S.set.sv < 3) { S.set.newBy = Object.assign({}, NEW_BY, S.set.newBy || {}); S.set.sv = 3; }
+    S.set.newBy = Object.assign({}, S.set.newBy || NEW_BY);   // 自己的一份，不要改到預設值
     S.excl = S.excl || {};
     S.bad = S.bad || [];
     S.ev = S.ev || [];
@@ -105,6 +116,13 @@
       it.hard = !!it.hard;
       it.hardOk = it.hardOk || [];
       it.lastUp = it.lastUp || ""; it.lastDn = it.lastDn || "";
+      /* 舊的階梯進度換成記憶模型：穩定度＝原本那階的間隔，難度 5；答對過選擇題（第 1 階以上）就改考填空 */
+      if (typeof it.s !== "number") {
+        it.s = Math.max(0.5, INT[it.pos] || 0.5);
+        it.d = Math.min(10, 5 + 0.5 * it.lapses);
+        it.lr = it.due && INT[it.pos] ? it.due - INT[it.pos] * DAY : (it.lastAt || 0);
+        it.fl = it.pos >= 1;
+      }
     });
     return S;
   }
@@ -112,9 +130,38 @@
   function dayLog(S, td) { return S.log[td] || (S.log[td] = { ms: 0, a: 0, c: 0, n: 0 }); }
   function addTime(S, ms, now) { dayLog(S, dateStr(now)).ms += Math.max(0, Math.min(ms, 90000)); }
 
+  /* ---------- 3b. 記憶模型 ---------- */
+  function retr(it, now) {                       // 現在還記得的機率（預估）
+    if (!it || typeof it.s !== "number" || !it.lr) return 1;
+    var t = Math.max(0, (now - it.lr) / DAY);
+    return Math.pow(1 + t / (9 * it.s), -1);
+  }
+  function clampD(d) { return Math.min(10, Math.max(1, d)); }
+  function level(s) {                            // 換算成舊的「第幾階」，進度卡和舊畫面用
+    var L = [1, 3, 7, 14, 30, 60], n = 0;
+    for (var i = 0; i < L.length; i++) if (s >= L[i]) n++;
+    return n;
+  }
+  /* g：1 忘了、2 勉強（其實算對、剛學會）、3 記得、4 很熟 */
+  function memUpdate(it, g, now) {
+    if (typeof it.s !== "number" || !it.lr) {
+      it.s = W[g - 1]; it.d = clampD(W[4] - (g - 3) * W[5]);
+    } else {
+      var r = retr(it, now), d = clampD(it.d - W[6] * (g - 3));
+      d = clampD(W[7] * W[4] + (1 - W[7]) * d);
+      var s;
+      if (g === 1) s = Math.min(it.s, W[11] * Math.pow(d, -W[12]) * (Math.pow(it.s + 1, W[13]) - 1) * Math.exp(W[14] * (1 - r)));
+      else s = it.s * (1 + Math.exp(W[8]) * (11 - d) * Math.pow(it.s, -W[9]) * (Math.exp(W[10] * (1 - r)) - 1) * (g === 2 ? W[15] : 1) * (g === 4 ? W[16] : 1));
+      it.s = Math.max(0.1, s); it.d = d;
+    }
+    it.lr = now;
+    it.pos = level(it.s);
+  }
+  function ivlOf(it) { return Math.max(1, Math.min(MAX_IVL, Math.round(it.s))); }   // 目標記得 90%：間隔約等於穩定度
+
   /* ---------- 4. 排程 ---------- */
   function isDue(it, now) { return it.due < addDays(now, 1); }   // 今天之內到期都算
-  function overdue(it, now) { return (now - it.due) / ((INT[it.pos] || 1) * DAY); }
+
   /* 下次日期：段考卡保證考前一天排到（最早明天）。
      考前總複習期間答對的不再壓到 finalDay：剛複習過、考試時還記得，全壓在同一天會塞爆 1/20（模擬抓到的） */
   function schedule(S, it, c, days, now) {
@@ -125,8 +172,9 @@
     }
     it.due = due;
   }
-  function newWaiting(S) {
-    var a = ORDER.filter(function (id) { return !S.items[id] && !S.excl[id] && !isExtra(CARDS[id]); });
+  function inSubj(id, subj) { return !subj || (CARDS[id] && CARDS[id].subj === subj); }
+  function newWaiting(S, subj) {
+    var a = ORDER.filter(function (id) { return !S.items[id] && !S.excl[id] && !isExtra(CARDS[id]) && inSubj(id, subj); });
     /* 有考試日期的卡先上（考試越近越先）；其他各科輪流一張一張上（國、生、英、國…），
        同一科照匯入順序。不然照檔名排，最後匯入的科目要等好幾週（2026-10-26 英文要等約 4 週） */
     var ex = a.filter(function (id) { return CARDS[id].exam; })
@@ -149,26 +197,40 @@
     }
     return out;
   }
-  function live(S) { return Object.keys(S.items).filter(function (id) { return CARDS[id] && !isExam(CARDS[id]) && !S.excl[id]; }); }
-  function hardDue(S, now) {
-    return live(S).filter(function (id) { var it = S.items[id]; return it.hard && isDue(it, now); })
+  function live(S, subj) { return Object.keys(S.items).filter(function (id) { return CARDS[id] && !isExam(CARDS[id]) && !S.excl[id] && inSubj(id, subj); }); }
+  function hardDue(S, now, subj) {
+    return live(S, subj).filter(function (id) { var it = S.items[id]; return it.hard && isDue(it, now); })
       .sort(function (a, b) { return S.items[a].due - S.items[b].due; });
   }
-  function reviewDue(S, now) {
-    return live(S).filter(function (id) { var it = S.items[id]; return !it.hard && isDue(it, now); })
-      .sort(function (a, b) {
-        var x = S.items[a], y = S.items[b];
-        return x.pos - y.pos || overdue(y, now) - overdue(x, now);
-      });
+  /* 到期的先考「最可能忘了」的（記得的機率最低的先）：沒練的天之後，最危險的先救 */
+  function reviewDue(S, now, subj) {
+    return live(S, subj).filter(function (id) { var it = S.items[id]; return !it.hard && isDue(it, now); })
+      .sort(function (a, b) { return retr(S.items[a], now) - retr(S.items[b], now); });
   }
-  function newQuota(S, now) {
+  function quotaOf(S, subj) { var by = S.set.newBy || NEW_BY; return subj in by ? by[subj] : NEW_OTHER; }
+  /* 今天要上的新卡：各科照自己的額度；「再來 10 張」可以加在某一科（ps）或不分科（plus） */
+  function newFor(S, now, subj) {
+    var l = dayLog(S, dateStr(now)), w = newWaiting(S, subj);
+    if (l.all) return w;                                   // 「今天全部上」（段考前一天用），只有今天
+    if (dateStr(now) > S.set.learnEnd) return [];          // 考前 10 天不學新東西
+    var ns = l.ns || {}, ps = l.ps || {}, used = {}, out = [];
+    var room = function (s) { return quotaOf(S, s) + (ps[s] || 0) - (ns[s] || 0) - (used[s] || 0); };
+    var extra = Math.max(0, (l.plus || 0) - (l.px || 0));   // 不分科加量還剩幾張
+    w.forEach(function (id) {
+      var s = CARDS[id].subj;
+      if (room(s) > 0) { out.push(id); used[s] = (used[s] || 0) + 1; }
+      else if (extra > 0 && !subj) { out.push(id); extra--; }
+    });
+    return out;
+  }
+  function newQuota(S, now) { return newFor(S, now).length; }     // 舊的介面還在用
+  /* 「再來 10 張」：今天的練完了還想多練，今天的新卡額度多 k 張，明天照常。subj 有寫就只加那一科 */
+  function moreNew(S, now, k, subj) {
     var l = dayLog(S, dateStr(now));
-    if (l.all) return 100000;                        // 「今天全部上」（段考前一天用），只有今天
-    if (dateStr(now) > S.set.learnEnd) return 0;    // 考前 10 天不學新東西
-    return Math.max(0, S.set.newMax + (l.plus || 0) - l.n);
+    if (subj) { l.ps = l.ps || {}; l.ps[subj] = (l.ps[subj] || 0) + (k || 10); }
+    else l.plus = (l.plus || 0) + (k || 10);
+    S.mtime = now;
   }
-  /* 「再來 10 張」：今天的練完了還想多練，今天的新卡額度多 k 張，明天照常 */
-  function moreNew(S, now, k) { var l = dayLog(S, dateStr(now)); l.plus = (l.plus || 0) + (k || 10); S.mtime = now; }
   /* 段考前一天：今天不限新卡數，明天自動恢復 */
   function allToday(S, now) { dayLog(S, dateStr(now)).all = 1; S.mtime = now; }
   /* 考前總複習：learnEnd 之後第一次練習，把考前不會再到期的卡平均排到 finalDay，
@@ -180,7 +242,7 @@
     S.finalAt = td;
     if (now >= fd) return 0;
     var ids = live(S).filter(function (id) { var it = S.items[id]; return !it.hard && it.due > fd; })
-      .sort(function (a, b) { var x = S.items[a], y = S.items[b]; return x.pos - y.pos || y.lapses - x.lapses; });
+      .sort(function (a, b) { var x = S.items[a], y = S.items[b]; return x.s - y.s || y.lapses - x.lapses; });
     var days = Math.round((fd - dayStart(now)) / DAY) + 1;
     ids.forEach(function (id, i) { S.items[id].due = addDays(now, Math.floor(i * days / ids.length)); });
     return ids.length;
@@ -196,57 +258,69 @@
       if (S.excl[id]) return;
       var s = CARDS[id].subj || "其他";
       var r = subs[s];
-      if (!r) { r = subs[s] = { subj: s, total: 0, started: 0, learn: 0, recall: 0, know: 0, hard: 0, extra: 0 }; list.push(r); }
+      if (!r) { r = subs[s] = { subj: s, total: 0, started: 0, learn: 0, recall: 0, know: 0, hard: 0, extra: 0, quota: quotaOf(S, s) }; list.push(r); }
       var it = S.items[id];
       if (!it && isExtra(CARDS[id])) { r.extra++; return; }   // 補充資料夾的，不算進每天的排程
       r.total++;
       if (!it) return;
       r.started++;
       if (it.hard) r.hard++;
-      else if (it.pos >= KNOW) r.know++;
-      else if (it.pos >= RECALL) r.recall++;
+      else if (it.pos >= KNOW) r.know++;          // 穩定度 ≥ 14 天
+      else if (it.fl) r.recall++;                 // 填空答對過
       else r.learn++;
     });
-    /* 照目前每天的新卡數，估全部上完的日期（learnEnd 之後不上新卡就不估） */
-    var left = newWaiting(S).length, per = S.set.newMax, td = dateStr(now);
-    var today = Math.max(0, per - dayLog(S, td).n);
-    var days = left <= today ? 0 : Math.ceil((left - today) / per);
-    var end = dateStr(addDays(now, days));
-    return { subs: list, left: left, done: left ? (end <= S.set.learnEnd ? end : null) : td };
+    /* 照各科每天的新卡額度，估每科、全部上完的日期（learnEnd 之後不上新卡就不估） */
+    var td = dateStr(now), ns = dayLog(S, td).ns || {}, last = td, left = 0;
+    list.forEach(function (r) {
+      var w = newWaiting(S, r.subj).length, today = Math.max(0, r.quota - (ns[r.subj] || 0));
+      var days = w <= today ? 0 : Math.ceil((w - today) / Math.max(1, r.quota));
+      r.left = w; r.done = dateStr(addDays(now, days));
+      left += w;
+      if (w && r.done > last) last = r.done;
+    });
+    return { subs: list, left: left, done: left ? (last <= S.set.learnEnd ? last : null) : td };
   }
 
   /* ---------- 5. 首頁 ---------- */
-  function home(S, now) {
+  function home(S, now, subj) {
     var td = dateStr(now), l = dayLog(S, td);
     /* 剛答錯（10 分鐘內）的先不算：馬上開始也不會考它，首頁不該顯示「開始」卻沒有題目 */
     var fresh = function (id) { return now - S.items[id].lastAt >= RECENT; };
-    var h = hardDue(S, now), r = reviewDue(S, now);
+    var h = hardDue(S, now, subj), r = reviewDue(S, now, subj);
     return {
       min: Math.floor(l.ms / 60000), budget: S.set.budget, floor: S.set.floor,
       hard: Math.min(h.filter(fresh).length, HARD_MAX),
       due: r.filter(fresh).length,
       soon: h.length + r.length - h.filter(fresh).length - r.filter(fresh).length,
-      newToday: Math.min(newQuota(S, now), newWaiting(S).length),
-      newWaiting: newWaiting(S).length,
-      total: ORDER.length,
+      newToday: newFor(S, now, subj).length,
+      newWaiting: newWaiting(S, subj).length,
+      total: ORDER.filter(function (id) { return inSubj(id, subj); }).length,
       answered: l.a, right: l.c
     };
   }
 
+  /* 學測的科目清單（照卡片第一次出現的順序），首頁分科用 */
+  function subjects(S, now) {
+    var seen = {}, out = [];
+    ORDER.forEach(function (id) { var s = CARDS[id].subj; if (!seen[s]) { seen[s] = 1; out.push(s); } });
+    return out.map(function (s) { var h = home(S, now, s); h.subj = s; return h; });
+  }
+
   /* ---------- 6. 一次練習 ---------- */
   /* 題目種類：P 新卡先測、L 新卡答錯後再考、M 選擇題、F 填空、R 答錯後再考（不計升降） */
-  function fmt(it) { return it && it.pos >= FILL_FROM ? "F" : "M"; }
-  function startSession(S, now) {
+  /* 選擇題答對過一次（沒先看答案）就改考填空：選擇題對你太簡單（2026-11-08 實際紀錄：答對 85%、約 3 秒） */
+  function fmt(it) { return it && it.fl ? "F" : "M"; }
+  function startSession(S, now, subj) {
     finalReview(S, now);
-    var sess = { n: 0, queue: [], later: [], done: {} };
+    var sess = { n: 0, queue: [], later: [], done: {}, subj: subj || null };
     var recent = function (id) { var it = S.items[id]; return it && now - it.lastAt < RECENT; };
     var push = function (id, kind) {
       if (recent(id)) sess.later.push({ id: id, kind: kind, after: LAG });
       else sess.queue.push({ id: id, kind: kind });
     };
-    hardDue(S, now).slice(0, HARD_MAX).forEach(function (id) { push(id, "H"); });
-    reviewDue(S, now).forEach(function (id) { push(id, "V"); });
-    newWaiting(S).slice(0, newQuota(S, now)).forEach(function (id) { sess.queue.push({ id: id, kind: "P" }); });
+    hardDue(S, now, subj).slice(0, HARD_MAX).forEach(function (id) { push(id, "H"); });
+    reviewDue(S, now, subj).forEach(function (id) { push(id, "V"); });
+    newFor(S, now, subj).forEach(function (id) { sess.queue.push({ id: id, kind: "P" }); });
     return sess;
   }
   function makeQ(S, id, kind, force) {
@@ -256,6 +330,8 @@
     var q = { id: id, kind: kind, fmt: f, subj: c.subj, q: c.q, card: c };
     if (f === "M") q.opts = shuffle([c.a].concat(c.opts));
     else q.mode = squash(c.a).length <= TYPE_MAX ? "type" : "self";
+    /* 答案有上下標：手機打不出來，直接打一般字母數字就算對（CO₂ 打 CO2、CᵃCᵃ 打 CaCa） */
+    if (q.mode === "type" && /[⁰-⁹₀-₉ᵃ-ᶻʰ⁺⁻]/.test(c.a)) q.hint = "上下標直接打一般字母、數字（例：CO₂ 打 CO2）";
     return q;
   }
   function next(S, sess, now) {
@@ -332,40 +408,54 @@
 
   /* ---------- 8. 升降 ---------- */
   function newItem(now) {
-    return { pos: 0, due: 0, seen: 0, right: 0, wrong: 0, lapses: 0, hard: false, hardOk: [], lastUp: "", lastDn: "", lastAt: 0, at: now };
+    return { pos: 0, due: 0, seen: 0, right: 0, wrong: 0, lapses: 0, hard: false, hardOk: [], lastUp: "", lastDn: "", lastAt: 0, at: now, fl: false };
   }
-  /* res ＝ { ok, rt, pick }；回傳 { ok, again }，again ＝ 要不要排再考 */
+  /* res ＝ { ok, rt, pick, grade }；grade 可省略（2 ＝「其實算對」這種勉強對）。回傳 { ok, again }，again ＝ 要不要排再考 */
   function submit(S, sess, q, res, now) {
     if (sess.folder) return drillSubmit(S, sess, q, res, now);
     var td = dateStr(now), c = CARDS[q.id], l = dayLog(S, td);
     var it = S.items[q.id], ok = !!res.ok, again = false;
-    if (q.kind === "P") { it = S.items[q.id] = newItem(now); l.n++; }
+    if (q.kind === "P") {
+      it = S.items[q.id] = newItem(now); l.n++; l.ns = l.ns || {};
+      /* 先算進那一科的額度，滿了才算「不分科加量」（px） */
+      if ((l.ns[c.subj] || 0) < quotaOf(S, c.subj) + ((l.ps || {})[c.subj] || 0) || l.all) l.ns[c.subj] = (l.ns[c.subj] || 0) + 1;
+      else l.px = (l.px || 0) + 1;
+    }
     var before = it.pos;
     it.seen++; it.lastAt = now;
     if (ok) it.right++; else it.wrong++;
     l.a++; if (ok) l.c++;
     sess.n++;
 
-    if (q.kind === "P" || q.kind === "L") {
-      /* 新卡：先測答對＝已經會了，明天再考一次選擇題確認（猜中的機率 1/4，明天就抓得到） */
-      if (ok) { it.pos = 1; it.lastUp = td; schedule(S, it, c, 1, now); }
-      else { it.pos = 0; it.due = dayStart(now); again = true; }
+    var g = ok ? (res.grade === 2 ? 2 : 3) : 1;
+    var first = it.lastUp !== td && it.lastDn !== td;     // 今天第一次考這張：記憶模型一天只更新一次
+    if (q.kind === "P") {
+      /* 新卡先測：答對＝可能已經會了，但選擇題有 1/4 會猜中，記成「勉強」（約 1 天後再考，下次考填空） */
+      if (ok) { memUpdate(it, 2, now); it.fl = true; it.lastUp = td; schedule(S, it, c, ivlOf(it), now); }
+      else { it.due = dayStart(now); again = true; }
+    } else if (q.kind === "L") {
+      /* 新卡答錯、看完答案隔幾題再考：答對＝剛學會，明天再考一次選擇題 */
+      if (ok) { if (typeof it.s !== "number" || !it.lr) memUpdate(it, 1, now); it.lastUp = td; schedule(S, it, c, 1, now); }
+      else again = true;
     } else if (q.kind === "R") {
-      /* 答錯後的再考：剛看過答案，不升級；答對明天再考 */
+      /* 答錯後的再考：剛看過答案，不更新記憶；答對明天再考 */
       if (ok) schedule(S, it, c, 1, now); else again = true;
     } else if (q.kind === "H") {
+      if (first) memUpdate(it, g, now);
       if (ok) {
         if (it.hardOk.indexOf(td) < 0) it.hardOk.push(td);
-        if (it.hardOk.length >= HARD_OUT) { it.hard = false; it.lapses = 0; it.hardOk = []; it.pos = 1; }
+        if (it.hardOk.length >= HARD_OUT) { it.hard = false; it.lapses = 0; it.hardOk = []; }
+        it.lastUp = td;
         schedule(S, it, c, 1, now);
-      } else { it.due = dayStart(now); again = true; }
+      } else { it.lastDn = td; it.due = dayStart(now); again = true; }
     } else {
       if (ok) {
-        if (it.lastUp !== td) { it.pos = Math.min(MAXPOS, it.pos + 1); it.lastUp = td; schedule(S, it, c, INT[it.pos], now); }
-        else schedule(S, it, c, 1, now);     // 一天只升一次
+        if (first) { memUpdate(it, g, now); it.fl = true; it.lastUp = td; schedule(S, it, c, ivlOf(it), now); }
+        else schedule(S, it, c, 1, now);
       } else {
-        if (it.lastDn !== td) {              // 一天只降一次
-          it.lapses++; it.pos = Math.max(0, it.pos - 1); it.lastDn = td;
+        if (it.lastDn !== td) {              // 一天只扣一次
+          if (first) memUpdate(it, 1, now);
+          it.lapses++; it.lastDn = td;
           if (it.lapses >= HARD_IN && !it.hard) { it.hard = true; it.hardOk = []; }
         }
         it.due = dayStart(now); again = true;
@@ -394,7 +484,8 @@
     INT: INT, LAG: LAG, NEW_MAX: NEW_MAX, HARD_IN: HARD_IN, HARD_MAX: HARD_MAX, FILL_FROM: FILL_FROM, TYPE_MAX: TYPE_MAX,
     setRandom: setRandom, dateStr: dateStr, parseDate: parseDate, addDays: addDays, squash: squash, clone: clone,
     init: init, card: card, normalize: normalize, blank: blank, addTime: addTime, dayLog: dayLog,
-    home: home, progress: progress, newWaiting: newWaiting, pri: pri, reviewDue: reviewDue, hardDue: hardDue, finalReview: finalReview,
+    home: home, subjects: subjects, progress: progress, newWaiting: newWaiting, newFor: newFor, pri: pri, reviewDue: reviewDue, hardDue: hardDue, finalReview: finalReview,
+    retr: retr, memUpdate: memUpdate, ivlOf: ivlOf,
     startSession: startSession, next: next, left: left, makeQ: makeQ,
     folders: folders, startFolder: startFolder, endFolder: endFolder,
     checkFill: checkFill, checkPick: checkPick, allToday: allToday, moreNew: moreNew, submit: submit, report: report, exclude: exclude
