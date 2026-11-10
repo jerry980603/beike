@@ -223,8 +223,8 @@
     var c = cur.card, html = '<div class="card"><div class="meta"><span class="tag">' + esc(c.subj) + '</span><span class="tag gray">' + (sess.folder ? esc(sess.folder) : KIND[cur.kind]) + "</span></div>" +
       '<div class="q">' + qHtml(c.q) + "</div><div id='ans'>";
     if (cur.fmt === "M") {
-      html += '<div class="opts">' + cur.opts.map(function (o, i) { return '<button class="opt" data-i="' + i + '">' + esc(o) + "</button>"; }).join("") +
-        '<button class="opt idk" data-i="-1">不知道</button></div>';
+      html += '<p class="sub">先在心裡想出答案，想到了再看選項。</p>' +
+        '<div class="row"><button class="btn ghost" id="noidea">想不出來</button><button class="btn" id="think">想到了，看選項</button></div>';
     } else if (cur.mode === "type") {
       html += (cur.hint ? '<p class="small">' + esc(cur.hint) + "</p>" : "") +
         '<input id="inp" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="填入空格的答案">' +
@@ -234,9 +234,8 @@
     }
     $main.innerHTML = html + "</div></div>";
     if (cur.fmt === "M") {
-      [].forEach.call($main.querySelectorAll(".opt"), function (b) {
-        b.onclick = function () { var i = +b.dataset.i; pickMC(i < 0 ? null : cur.opts[i], b); };
-      });
+      document.getElementById("think").onclick = showOpts;
+      document.getElementById("noidea").onclick = function () { document.getElementById("ans").innerHTML = ""; done(false, "?"); };   // 想不出來＝不會，直接看答案
     } else if (cur.mode === "type") {
       var inp = document.getElementById("inp");
       inp.focus();
@@ -249,6 +248,14 @@
     }
   }
   function rt() { return (firstKey || Date.now()) - shownAt; }
+  function showOpts() {
+    firstKey = Date.now();   // 答題時間算到「想到了」為止
+    document.getElementById("ans").innerHTML = '<div class="opts">' + cur.opts.map(function (o, i) { return '<button class="opt" data-i="' + i + '">' + esc(o) + "</button>"; }).join("") +
+      '<button class="opt idk" data-i="-1">其實不知道</button></div>';
+    [].forEach.call($main.querySelectorAll(".opt"), function (b) {
+      b.onclick = function () { var i = +b.dataset.i; pickMC(i < 0 ? null : cur.opts[i], b); };
+    });
+  }
   function pickMC(pick, btn) {
     var good = pick != null && BK.checkPick(cur.card, pick);
     [].forEach.call($main.querySelectorAll(".opt"), function (b) {
@@ -288,7 +295,8 @@
     var box = document.getElementById("ans"), html = "";
     if (q.fmt !== "M") box.innerHTML = "";
     if (good) {
-      html = '<div class="fb ok">✓ 答對' + (q.fmt === "M" ? "" : "：<b>" + esc(q.card.a) + "</b>") + "</div>";
+      html = '<div class="fb ok">✓ 答對' + (q.fmt === "M" ? "" : "：<b>" + esc(q.card.a) + "</b>") + "</div>" +
+        (q.fmt === "M" ? '<div class="links"><button id="elim">其實是刪去的／猜的</button></div>' : "");
     } else {
       html = '<div class="fb bad">' + (pick && pick !== "?" && pick !== "自評" ? "你答：" + esc(pick) + "<br>" : "") +
         '答案：<span class="ans">' + esc(q.card.a) + "</span>" + ctxHtml() + "</div>" +
@@ -298,6 +306,17 @@
     box.insertAdjacentHTML("beforeend", html);
     var nx = document.getElementById("nx");
     nx.onclick = nextQ; nx.focus();
+    var el = document.getElementById("elim");
+    if (el) el.onclick = function () {
+      var r = BK.relabel(S, sess, q, Date.now());
+      if (!r) return;
+      stats.ok--; save();
+      var f = box.querySelector(".fb.ok");
+      f.className = "fb bad";
+      f.innerHTML = '改成不會：答案是 <span class="ans">' + esc(q.card.a) + "</span>" + ctxHtml() +
+        '<p class="small">隔 ' + (sess.folder ? sess.lag : BK.LAG) + " 題再考一次。</p>";
+      el.parentNode.remove();
+    };
     document.getElementById("rep").onclick = function () {
       var note = prompt("哪裡有問題？（例：答案錯、選項也說得通、看不懂）");
       if (note == null) return;

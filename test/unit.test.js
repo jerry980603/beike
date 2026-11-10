@@ -28,7 +28,7 @@ t("新卡先測答對 → 記成勉強，約 1 天後考填空", function () {
   var it = S.items["d#1"];
   eq(it.due, BK.addDays(D0, 1)); ok(it.fl, "下次考填空"); ok(Math.abs(it.s - 1.4003) < 1e-6, "穩定度＝勉強的初始值");
   eq(BK.next(S, s, D0), null);
-  eq(BK.makeQ(S, "d#1", "V").fmt, "F");
+  eq(BK.makeQ(S, "d#1", "V").fmt, "M", "學測複習一律考選擇題（2026-11-10）");
 });
 
 t("新卡先測答錯 → 隔 10 題再考、答對明天再考選擇題", function () {
@@ -52,7 +52,7 @@ t("複習答對：穩定度變大、間隔拉長；同一天再答對不再算",
   BK.init(mk(1)); var S = BK.blank(D0); item(S, "d#1", { pos: 2, due: D0 });
   var it = S.items["d#1"]; eq(it.s, 3, "舊的第 2 階換成穩定度 3 天"); ok(it.fl);
   var s = BK.startSession(S, D0), q = BK.next(S, s, D0);
-  eq(q.fmt, "F", "答對過選擇題就考填空"); eq(q.mode, "type");
+  eq(q.fmt, "M", "學測複習考選擇題");
   ans(S, s, q, true, D0);
   ok(it.s > 8 && it.s < 16, "到期時答對，穩定度約變 4 倍：" + it.s);
   eq(it.due, BK.addDays(D0, Math.round(it.s)));
@@ -112,9 +112,9 @@ t("填空：長答案自己判、打字不管全形和標點、alt 也算對", f
   ok(BK.checkFill(m, "-5x1")); ok(BK.checkFill(m, "－5*1")); ok(!BK.checkFill(m, "5x1"), "負號不能省");
   ok(BK.checkFill(mn, "Mn2+")); ok(!BK.checkFill(mn, "Mn2")); ok(BK.checkFill(d, "+2.5")); ok(!BK.checkFill(d, "+25"), "小數點不能省");
   var S = BK.blank(D0); item(S, "x#2", { pos: 2, due: D0 }); item(S, "x#1", { pos: 2, due: D0 });
-  eq(BK.makeQ(S, "x#2", "V").mode, "self");
-  var q1 = BK.makeQ(S, "x#1", "V"); eq(q1.mode, "type"); ok(q1.hint, "有上下標要提示怎麼打");
-  ok(!BK.makeQ(S, "x#2", "V").hint);
+  eq(BK.makeQ(S, "x#2", "D", "F").mode, "self");
+  var q1 = BK.makeQ(S, "x#1", "D", "F"); eq(q1.mode, "type"); ok(q1.hint, "有上下標要提示怎麼打");
+  ok(!BK.makeQ(S, "x#2", "D", "F").hint);
 });
 
 t("各科新卡額度：英 12、生 12、國 6，明天再上", function () {
@@ -305,6 +305,29 @@ t("舊存檔換成記憶模型：穩定度、上次複習、填空", function ()
   eq([a.s, a.d, a.fl, a.lr], [14, 6, true, D0 - 11 * 86400000]);
   eq([b.s, b.fl], [0.5, false]);
   var before = JSON.stringify(S.items); BK.normalize(S); eq(JSON.stringify(S.items), before, "再跑一次不變");
+});
+
+t("其實是刪去的：答對改成答錯，進度回到答題前再記成不會", function () {
+  BK.init(mk(12)); var S = B30(); item(S, "d#1", { pos: 3, due: D0 });
+  var it0 = JSON.parse(JSON.stringify(S.items["d#1"])), s = BK.startSession(S, D0), q = BK.next(S, s, D0);
+  eq(q.id, "d#1"); ans(S, s, q, true, D0);
+  ok(S.items["d#1"].s > it0.s, "答對後穩定度變大");
+  var r = BK.relabel(S, s, q, D0);
+  ok(r && !r.ok && r.again, "改成答錯、要再考");
+  var it = S.items["d#1"];
+  ok(it.s < it0.s, "穩定度照答錯算（比答題前小）"); eq(it.lapses, 1); eq(it.right, it0.right); eq(it.wrong, it0.wrong + 1);
+  var l = S.log["2026-10-20"]; eq([l.a, l.c], [1, 0], "今天的答題數不重複算");
+  eq(S.ev.length, 1); eq(S.ev[0][5], "刪去");
+  eq(BK.relabel(S, s, q, D0), null, "只能改一次");
+  var n = BK.next(S, s, D0); ok(n.id !== "d#1", "隔幾題才再考");
+});
+
+t("其實是刪去的：新卡先測也可以改，改了算沒學會", function () {
+  BK.init(mk(12)); var S = B30(), s = BK.startSession(S, D0), q = BK.next(S, s, D0);
+  ans(S, s, q, true, D0); BK.relabel(S, s, q, D0);
+  var it = S.items["d#1"]; ok(it, "還是建立了進度"); ok(!it.fl); eq(it.due, BK.dayLog ? it.due : it.due);
+  eq(S.log["2026-10-20"].n, 1, "新卡數只算一次");
+  eq(s.later.filter(function (x) { return x.id === "d#1"; }).length, 1);
 });
 
 t("事件紀錄與每日紀錄", function () {

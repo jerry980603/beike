@@ -308,8 +308,10 @@
 
   /* ---------- 6. 一次練習 ---------- */
   /* 題目種類：P 新卡先測、L 新卡答錯後再考、M 選擇題、F 填空、R 答錯後再考（不計升降） */
-  /* 選擇題答對過一次（沒先看答案）就改考填空：選擇題對你太簡單（2026-11-08 實際紀錄：答對 85%、約 3 秒） */
-  function fmt(it) { return it && it.fl ? "F" : "M"; }
+  /* 2026-11-10 使用者：填空的問題（打字、同義詞、自己判）比選擇大，學測複習一律考選擇題；
+     刪去法的問題改用「先想再選」（介面先只出題目：想到了才看選項、想不出來直接算不會）和「其實是刪去的」解決。
+     fl ＝「想到了而且答對過」，進度卡用。填空只留在段考／補充資料夾，自己選 */
+  function fmt(it) { return "M"; }
   function startSession(S, now, subj) {
     finalReview(S, now);
     var sess = { n: 0, queue: [], later: [], done: {}, subj: subj || null };
@@ -411,7 +413,27 @@
     return { pos: 0, due: 0, seen: 0, right: 0, wrong: 0, lapses: 0, hard: false, hardOk: [], lastUp: "", lastDn: "", lastAt: 0, at: now, fl: false };
   }
   /* res ＝ { ok, rt, pick, grade }；grade 可省略（2 ＝「其實算對」這種勉強對）。回傳 { ok, again }，again ＝ 要不要排再考 */
+  function snapshot(S, sess, q, now) {
+    var l = dayLog(S, dateStr(now));
+    sess.snap = { id: q.id, kind: q.kind, item: clone(S.items[q.id]), log: clone(l), td: dateStr(now), ev: S.ev.length, n: sess.n,
+                  done: !!sess.done[q.id], later: clone(sess.later), first: sess.first ? clone(sess.first) : null };
+  }
+  /* 「其實是刪去的／猜的」：剛剛答對的這題還原成答題前，再記成答錯（隔幾題再考、照不會的卡排） */
+  function relabel(S, sess, q, now) {
+    var sn = sess.snap;
+    if (!sn || sn.id !== q.id) return null;
+    if (sn.item) S.items[q.id] = sn.item; else delete S.items[q.id];
+    S.log[sn.td] = sn.log;
+    S.ev.splice(sn.ev);
+    sess.n = sn.n; sess.later = sn.later;
+    if (sn.first) sess.first = sn.first;
+    if (!sn.done) delete sess.done[q.id];
+    var r = submit(S, sess, q, { ok: false, rt: 0, pick: "刪去" }, now);
+    sess.snap = null;
+    return r;
+  }
   function submit(S, sess, q, res, now) {
+    snapshot(S, sess, q, now);
     if (sess.folder) return drillSubmit(S, sess, q, res, now);
     var td = dateStr(now), c = CARDS[q.id], l = dayLog(S, td);
     var it = S.items[q.id], ok = !!res.ok, again = false;
@@ -488,7 +510,7 @@
     retr: retr, memUpdate: memUpdate, ivlOf: ivlOf,
     startSession: startSession, next: next, left: left, makeQ: makeQ,
     folders: folders, startFolder: startFolder, endFolder: endFolder,
-    checkFill: checkFill, checkPick: checkPick, allToday: allToday, moreNew: moreNew, submit: submit, report: report, exclude: exclude
+    checkFill: checkFill, checkPick: checkPick, allToday: allToday, moreNew: moreNew, submit: submit, relabel: relabel, report: report, exclude: exclude
   };
   root.BK = BK;
   if (typeof module !== "undefined" && module.exports) module.exports = BK;
